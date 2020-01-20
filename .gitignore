@@ -1,0 +1,6 @@
+*.o
+*.d
+*.elf
+*.moc
+*.pro.user
+
