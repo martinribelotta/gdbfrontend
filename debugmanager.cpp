@@ -8,6 +8,8 @@
 #include <QRegularExpression>
 #include <QJsonDocument>
 
+#include <QtDebug>
+
 #include <csignal>
 
 namespace mi {
@@ -73,6 +75,8 @@ const auto _GDB_MI_TARGET_OUTPUT_RE = re.compile(R"re(@"(.*)")re", re.DOTALL);
 // Response finished
 const auto _GDB_MI_RESPONSE_FINISHED_RE = re.compile(R"(^\(gdb\)\s*$)");
 
+const QString _CLOSE_CHARS{"}]\""};
+
 struct Response {
     enum Type_t {
         unknown,
@@ -81,8 +85,6 @@ struct Response {
         console,
         log,
         target,
-        done,
-        output,
         promt
     } type;
 
@@ -203,6 +205,8 @@ QVariant parseValue(const QString& str, QString::const_iterator& it, QChar termi
     } else if (*it == '{') {
         return parseDict(str, ++it);
     }
+    if (mi::_CLOSE_CHARS.contains(*it))
+        return {};
     return parseKeyVal(str, it, terminator);
 }
 
@@ -250,7 +254,7 @@ Response parse_response(const QString& gdb_mi_text)
     } else {
         // This was not gdb mi output, so it must have just been printed by
         // the inferior program that's being debugged
-        return { Response::output, {}, gdb_mi_text };
+        return { Response::unknown, {}, gdb_mi_text };
     }
 }
 
@@ -258,25 +262,36 @@ Response parse_response(const QString& gdb_mi_text)
 
 struct DebugManager::Priv_t
 {
-    using responseFunctor_t = std::function<bool (QChar type, const QString&)>;
-
     int tokenCounter = 0;
     QProcess *gdb;
     QString buffer;
-    QHash<int, responseFunctor_t> resposeExpected;
+    QHash<int, DebugManager::ResponseHandler_t> resposeExpected;
+    QString m_gdbCommand;
+    bool m_remote = false;
 
     Priv_t(DebugManager *self) : gdb(new QProcess(self))
     {
     }
 };
 
+namespace gdbprivate {
+static bool registered = false;
+void registerMetatypes() {
+    if (registered)
+        return;
+    qRegisterMetaType<gdb::Frame>();
+    qRegisterMetaType<gdb::Breakpoint>();
+    qRegisterMetaType<gdb::Variable>();
+    qRegisterMetaType<gdb::Thread>();
+    registered = true;
+}
+}
+
 DebugManager::DebugManager(QObject *parent) :
     QObject(parent),
     self(new Priv_t{this})
 {
-    qRegisterMetaType<gdb::Frame>();
-    qRegisterMetaType<gdb::Breakpoint>();
-
+    gdbprivate::registerMetatypes();
     setGdbCommand(mi::DEFAULT_GDB_COMMAND);
     connect(self->gdb, &QProcess::readyReadStandardOutput, [this]() {
         for (const auto& c: QString{self->gdb->readAllStandardOutput()})
@@ -304,6 +319,16 @@ DebugManager *DebugManager::instance()
     return self;
 }
 
+QString DebugManager::gdbCommand() const
+{
+    return self->m_gdbCommand;
+}
+
+bool DebugManager::isRemote() const
+{
+    return self->m_remote;
+}
+
 void DebugManager::execute()
 {
     self->gdb->start(QString{"%1 -interpreter=mi"}.arg(gdbCommand()));
@@ -321,6 +346,19 @@ void DebugManager::command(const QString &cmd)
     self->gdb->write(QString{"%1%2%3"}.arg(tokStr, cmd, mi::EOL).toLocal8Bit());
 }
 
+void DebugManager::commandAndResponse(const QString& cmd,
+                                      const ResponseHandler_t& handler,
+                                      ResponseAction_t action)
+{
+    auto currentToken = self->tokenCounter;
+    self->resposeExpected.insert(currentToken, [this, action, handler, currentToken](const QVariant& r) {
+        handler(r);
+        if (action == ResponseAction_t::Temporal)
+            self->resposeExpected.remove(currentToken);
+    });
+    command(cmd);
+}
+
 void DebugManager::breakInsert(const QString &path)
 {
     command(QString{"-break-insert %1"}.arg(path));
@@ -334,13 +372,13 @@ void DebugManager::loadExecutable(const QString &file)
 void DebugManager::launchLocal()
 {
     command("-exec-run");
-    m_remote = false;
+    self->m_remote = false;
 }
 
 void DebugManager::launchRemote(const QString &remoteTarget)
 {
     command(QString{"-target-select remote %1"}.arg(remoteTarget));
-    m_remote = true;
+    self->m_remote = true;
 }
 
 void DebugManager::commandContinue()
@@ -370,13 +408,144 @@ void DebugManager::commandInterrupt()
     } else {
 #ifdef Q_OS_UNIX
         ::kill(self->gdb->processId(), SIGINT);
+#else
+        // TODO Implement windows stop process
 #endif
     }
 }
 
-static gdb::Frame parseFrame(const QVariantMap& data)
+void DebugManager::setGdbCommand(QString gdbCommand)
+{
+    self->m_gdbCommand = gdbCommand;
+}
+
+void DebugManager::stackListFrames()
+{
+
+}
+
+void DebugManager::processLine(const QString &line)
+{
+    using dispatcher_t = std::function<void(const mi::Response&)>;
+    static const dispatcher_t noop = [](const mi::Response&) {};
+
+    auto r = mi::parse_response(line);
+    if (self->resposeExpected.contains(r.token))
+        self->resposeExpected.value(r.token)(r.payload);
+
+    QString sOut;
+    QTextStream(&sOut)
+        << "type: " << QMap<mi::Response::Type_t, QString>{
+                { mi::Response::unknown, "unknown" },
+                { mi::Response::notify, "notify" },
+                { mi::Response::result, "result" },
+                { mi::Response::console, "console" },
+                { mi::Response::log, "log" },
+                { mi::Response::target, "target" },
+                { mi::Response::promt, "promt" }
+               }.value(r.type) << "\n"
+        << "message: " << r.message << "\n"
+        << "token: " << r.token << "\n"
+        << "payload: " << QJsonDocument::fromVariant(r.payload).toJson() << "\n\n";
+    emit streamDebugInternal(sOut);
+
+    switch (r.type) {
+    case mi::Response::notify:
+        static const QMap<QString, dispatcher_t> responseDispatcher{
+            { "stopped", [this](const mi::Response& r) {
+                auto data = r.payload.toMap();
+                auto reason = data.value("reason").toString();
+                auto thid = data.value("thread-id").toString();
+                auto core = data.value("core").toInt();
+                auto frame = gdb::Frame::parseMap(data.value("frame").toMap());
+                emit asyncStopped(reason, frame, thid, core);
+             } },
+             { "running", [this](const mi::Response& r) {
+                 auto data = r.payload.toMap();
+                 auto thid = data.value("thread-id").toString();
+                 emit asyncRunning(thid);
+             } },
+            { "breakpoint-modified", [this](const mi::Response& r) {
+                 auto data = r.payload.toMap();
+                 auto bp = data.value("bkpt").toMap();
+                 emit breakpointModified(gdb::Breakpoint::parseMap(bp));
+             } },
+            { "breakpoint-created", [this](const mi::Response& r) {
+                 auto data = r.payload.toMap();
+                 auto bp = data.value("bkpt").toMap();
+                 emit breakpointModified(gdb::Breakpoint::parseMap(bp));
+             } },
+            { "breakpoint-deleted", [this](const mi::Response& r) {
+                 auto data = r.payload.toMap();
+                 auto id = data.value("id").toInt();
+                 emit breakpointRemoved(id);
+             } },
+        };
+        responseDispatcher.value(r.message, noop)(r);
+        break;
+    case mi::Response::result:
+        if (r.message == "done") {
+            static const QMap<QString, dispatcher_t> doneDispatcher{
+                { "frame", [this](const mi::Response& r) {
+                     auto f = gdb::Frame::parseMap(r.payload.toMap().value("frame").toMap());
+                     emit updateCurrentFrame(f);
+                 }},
+                { "variables", [this](const mi::Response& r) {
+                     QList<gdb::Variable> variableList;
+                     auto locals = r.payload.toMap().value("variables").toList();
+                     for (const auto& e: locals)
+                         variableList.append(gdb::Variable::parseMap(e.toMap()));
+                     emit updateLocalVariables(variableList);
+                 }},
+                { "threads", [this](const mi::Response& r) {
+                     QList<gdb::Thread> threadList;
+                     auto data =  r.payload.toMap();
+                     auto threads = data.value("threads").toList();
+                     auto currId = data.value("current-thread-id").toInt();
+                     for (const auto& e: threads)
+                         threadList.append(gdb::Thread::parseMap(e.toMap()));
+                     emit updateThreads(currId, threadList);
+                 }},
+                { "stack", [this](const mi::Response& r) {
+                     QList<gdb::Frame> stackFrames;
+                     auto stackTrace = r.payload.toMap().value("stack").toList().first().toMap().values("frame");
+                     for (const auto& e: stackTrace) {
+                         auto frame = gdb::Frame::parseMap(e.toMap());
+                         stackFrames.append(frame);
+                     }
+                     emit updateStackFrame(stackFrames);
+                 }},
+            };
+            for (const auto& k: r.payload.toMap().keys())
+                doneDispatcher.value(k, noop)(r);
+        } else if (r.message == "connected") {
+            emit targetRemoteConnected();
+        } else if (r.message == "error") {
+            emit gdbError(mi::escapedText(r.payload.toMap().value("msg").toString()));
+        }
+        emit result(r.token, r.message, r.payload);
+        break;
+    case mi::Response::console:
+        emit streamConsole(mi::escapedText(r.message));
+        break;
+    case mi::Response::target:
+        emit streamConsole(mi::escapedText(r.message));
+        break;
+    case mi::Response::promt:
+        emit gdbPromt();
+        break;
+    case mi::Response::log:
+    case mi::Response::unknown:
+    default:
+        emit streamGdb(mi::escapedText(r.message));
+        break;
+    }
+}
+
+gdb::Frame gdb::Frame::parseMap(const QVariantMap &data)
 {
     gdb::Frame f;
+    f.level = data.value("level").toInt();
     f.addr = data.value("addr").toString().toULongLong(nullptr, 16);
     f.func = data.value("func").toString();
     f.file = data.value("file").toString();
@@ -388,68 +557,34 @@ static gdb::Frame parseFrame(const QVariantMap& data)
     return f;
 }
 
-void DebugManager::processLine(const QString &line)
+gdb::Breakpoint gdb::Breakpoint::parseMap(const QVariantMap &data)
 {
-    auto r = mi::parse_response(line);
+    gdb::Breakpoint bp;
+    // TODO Implement me
+    return bp;
+}
 
-    QTextStream(stdout)
-        << "type: " << QMap<mi::Response::Type_t, QString>{
-                { mi::Response::unknown, "unknown" },
-                { mi::Response::notify, "notify" },
-                { mi::Response::result, "result" },
-                { mi::Response::console, "console" },
-                { mi::Response::log, "log" },
-                { mi::Response::target, "target" },
-                { mi::Response::done, "done" },
-                { mi::Response::output, "output" },
-                { mi::Response::promt, "promt" }
-               }.value(r.type) << "\n"
-        << "message: " << r.message << "\n"
-        << "token: " << r.token << "\n"
-        << "payload: " << QJsonDocument::fromVariant(r.payload).toJson() << "\n\n";
+gdb::Variable gdb::Variable::parseMap(const QVariantMap &data)
+{
+    gdb::Variable v;
+    v.name = data.value("name").toString();
+    v.type = data.value("type").toString();
+    v.value = data.value("value").toString();
+    return v;
+}
 
-    switch (r.type) {
-    default:
-    case mi::Response::unknown:
-        break;
-    case mi::Response::notify:
-        using dispatcher_t = std::function<void(const mi::Response&)>;
-        static const dispatcher_t noop = [](const mi::Response&) {};
-        static const QMap<QString, dispatcher_t> responseDispatcher{
-            { "stopped", [this](const mi::Response& r) {
-                auto data = r.payload.toMap();
-                QString reason = data.value("reason").toString();
-                QString thid = data.value("thread-id").toString();
-                int core = data.value("core").toInt();
-                gdb::Frame frame = parseFrame(data.value("frame").toMap());
-                emit asyncStopped(reason, frame, thid, core);
-             } },
-
-             { "running", [this](const mi::Response& r) {
-                 auto data = r.payload.toMap();
-                 auto thid = data.value("thread-id").toString();
-                 emit asyncRunning(thid);
-             } },
-        };
-        responseDispatcher.value(r.message, noop)(r);
-        break;
-    case mi::Response::result:
-        break;
-    case mi::Response::console:
-        emit streamConsole(mi::escapedText(r.message));
-        break;
-    case mi::Response::log:
-        emit streamGdb(mi::escapedText(r.message));
-        break;
-    case mi::Response::target:
-        emit streamConsole(mi::escapedText(r.message));
-        break;
-    case mi::Response::done:
-        break;
-    case mi::Response::output:
-        break;
-    case mi::Response::promt:
-        emit gdbPromnt();
-        break;
-    }
+gdb::Thread gdb::Thread::parseMap(const QVariantMap &data)
+{
+    gdb::Thread t;
+    t.id = data.value("id").toInt();
+    t.targetId = data.value("target-id").toString();
+    t.details = data.value("details").toString();
+    t.name = data.value("name").toString();
+    t.state = QMap<QString, gdb::Thread::State_t>{
+        { "stopped", Stopped },
+        { "running", Running },
+    }.value(data.value("state").toString(), Unknown);
+    t.frame = Frame::parseMap(data.value("frame").toMap());
+    t.core = data.value("core").toInt();
+    return t;
 }
