@@ -12,7 +12,7 @@ qmake --version
 VERSION=$(git rev-parse --short HEAD)
 
 INSTALL_DIR=/tmp/gdbfront
-DEPLOY_OPT="-no-translations -verbose=2 -executable=$INSTALL_DIR/usr/bin/gdbfront"
+#DEPLOY_OPT="-no-translations -verbose=2 -executable=$INSTALL_DIR/usr/bin/gdbfront"
 DESKTOP_FILE=$INSTALL_DIR/usr/share/applications/gdbfront.desktop
 
 echo ************** LINUX BUILD ***********************
@@ -21,7 +21,8 @@ qmake CONFIG+=release CONFIG+=force_debug_info gdbfront.pro
 make -j4
 make install INSTALL_ROOT=${INSTALL_DIR}
 
-linuxdeployqt $DESKTOP_FILE $DEPLOY_OPT -appimage
+#linuxdeployqt $DESKTOP_FILE $DEPLOY_OPT -appimage
+linuxdeployqt $DESKTOP_FILE -appimage
 (
 APPIMAGE_DIR=${PWD}
 APPIMAGE=${PWD}/gdbfront-${VERSION}-x86_64.AppImage
