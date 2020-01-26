@@ -1,0 +1,44 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/application-exit.svg</file>
+        <file>images/configure.svg</file>
+        <file>images/debug-init.svg</file>
+        <file>images/debug-pause-v2.svg</file>
+        <file>images/debug-run-v2.svg</file>
+        <file>images/debug-step-into-v2.svg</file>
+        <file>images/debug-step-out-v2.svg</file>
+        <file>images/debug-step-over-v2.svg</file>
+        <file>images/debug-stop-v2.svg</file>
+        <file>images/dialog-close.svg</file>
+        <file>images/dialog-ok-apply.svg</file>
+        <file>images/dialog-ok.svg</file>
+        <file>images/document-close-all.svg</file>
+        <file>images/document-close.svg</file>
+        <file>images/window-close.svg</file>
+        <file>images/application-menu.svg</file>
+        <file>images/code-block.svg</file>
+        <file>images/code-class.svg</file>
+        <file>images/code-context.svg</file>
+        <file>images/code-function.svg</file>
+        <file>images/code-typedef.svg</file>
+        <file>images/code-variable.svg</file>
+        <file>images/deletecell.svg</file>
+        <file>images/document-new.svg</file>
+        <file>images/document-open.svg</file>
+        <file>images/edit-clear.svg</file>
+        <file>images/edit-copy.svg</file>
+        <file>images/edit-cut.svg</file>
+        <file>images/edit-delete.svg</file>
+        <file>images/edit-download.svg</file>
+        <file>images/edit-find-replace.svg</file>
+        <file>images/edit-find.svg</file>
+        <file>images/edit-paste.svg</file>
+        <file>images/edit-redo.svg</file>
+        <file>images/edit-select-all.svg</file>
+        <file>images/edit-undo.svg</file>
+        <file>images/help-about.svg</file>
+        <file>images/list-add.svg</file>
+        <file>images/list-remove.svg</file>
+        <file>images/remote-debug-init.svg</file>
+    </qresource>
+</RCC>

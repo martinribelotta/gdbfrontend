@@ -12,6 +12,8 @@
 
 #include <csignal>
 
+#include <atomic>
+
 namespace mi {
 
 constexpr auto DEFAULT_GDB_COMMAND = "gdb";
@@ -266,8 +268,9 @@ struct DebugManager::Priv_t
     QProcess *gdb;
     QString buffer;
     QHash<int, DebugManager::ResponseHandler_t> resposeExpected;
-    QString m_gdbCommand;
     bool m_remote = false;
+    std::atomic_bool m_firstPromt{true};
+    QMap<int, gdb::Breakpoint> breakpoints;
 
     Priv_t(DebugManager *self) : gdb(new QProcess(self))
     {
@@ -287,6 +290,12 @@ void registerMetatypes() {
 }
 }
 
+template<typename Tret>
+static Tret strmap(const QMap<QString, Tret>& map, const QString& key, Tret def)
+{
+    return map.value(key, def);
+}
+
 DebugManager::DebugManager(QObject *parent) :
     QObject(parent),
     self(new Priv_t{this})
@@ -303,6 +312,13 @@ DebugManager::DebugManager(QObject *parent) :
                 break;
             default: self->buffer.append(c); break;
             }
+    });
+    connect(self->gdb, &QProcess::started, [this]() {
+        self->tokenCounter = 0;
+        self->buffer.clear();
+        self->resposeExpected.clear();
+        self->m_remote = false;
+        self->m_firstPromt.store(true);
     });
 }
 
@@ -321,7 +337,7 @@ DebugManager *DebugManager::instance()
 
 QString DebugManager::gdbCommand() const
 {
-    return self->m_gdbCommand;
+    return self->gdb->program();
 }
 
 bool DebugManager::isRemote() const
@@ -329,9 +345,49 @@ bool DebugManager::isRemote() const
     return self->m_remote;
 }
 
+QList<gdb::Breakpoint> DebugManager::allBreakpoints() const
+{
+    return self->breakpoints.values();
+}
+
+QList<gdb::Breakpoint> DebugManager::breakpointsForFile(const QString &filePath) const
+{
+    QList<gdb::Breakpoint> list;
+    for (auto it = self->breakpoints.cbegin(); it != self->breakpoints.cend(); ++it) {
+        auto& bp = it.value();
+        if (bp.fullname == filePath)
+            list.append(bp);
+    }
+    return list;
+}
+
+gdb::Breakpoint DebugManager::breakpointById(int id) const
+{
+    return self->breakpoints.value(id);
+}
+
+gdb::Breakpoint DebugManager::breakpointByFileLine(const QString &path, int line) const
+{
+    for (auto it = self->breakpoints.cbegin(); it != self->breakpoints.cend(); ++it) {
+        auto& bp = it.value();
+        if (bp.fullname == path && bp.line == line)
+            return bp;
+    }
+    return {};
+}
+
+QStringList DebugManager::gdbArgs() const
+{
+    return self->gdb->arguments();
+}
+
 void DebugManager::execute()
 {
-    self->gdb->start(QString{"%1 -interpreter=mi"}.arg(gdbCommand()));
+    auto a = self->gdb->arguments();
+    a.prepend("-interpreter=mi");
+    self->gdb->setArguments(a);
+    self->gdb->setProgram(gdbCommand());
+    self->gdb->start();
 }
 
 void DebugManager::quit()
@@ -343,7 +399,11 @@ void DebugManager::command(const QString &cmd)
 {
     auto tokStr = QString{"%1"}.arg(self->tokenCounter, 6, 10, QChar{'0'});
     self->tokenCounter = (self->tokenCounter + 1) % 999999;
-    self->gdb->write(QString{"%1%2%3"}.arg(tokStr, cmd, mi::EOL).toLocal8Bit());
+    auto line = QString{"%1%2%3"}.arg(tokStr, cmd, mi::EOL);
+    self->gdb->write(line.toLocal8Bit());
+    QString sOut;
+    QTextStream(&sOut) << "gdbCommand: " << line << "\n";
+    emit streamDebugInternal(sOut);
 }
 
 void DebugManager::commandAndResponse(const QString& cmd,
@@ -359,9 +419,25 @@ void DebugManager::commandAndResponse(const QString& cmd,
     command(cmd);
 }
 
+void DebugManager::breakRemove(int bpid)
+{
+    auto cmd = QString{"-break-delete %1"}.arg(bpid);
+    commandAndResponse(cmd, [this, bpid](const QVariant&) {
+        auto bp = self->breakpoints.value(bpid);
+        self->breakpoints.remove(bpid);
+        emit breakpointRemoved(bp);
+    });
+}
+
 void DebugManager::breakInsert(const QString &path)
 {
-    command(QString{"-break-insert %1"}.arg(path));
+    auto cmd = QString{"-break-insert %1"}.arg(path);
+    commandAndResponse(cmd, [this](const QVariant& r) {
+        auto data = r.toMap();
+        auto bp = gdb::Breakpoint::parseMap(data.value("bkpt").toMap());
+        self->breakpoints.insert(bp.number, bp);
+        emit breakpointInserted(bp);
+    });
 }
 
 void DebugManager::loadExecutable(const QString &file)
@@ -416,12 +492,17 @@ void DebugManager::commandInterrupt()
 
 void DebugManager::setGdbCommand(QString gdbCommand)
 {
-    self->m_gdbCommand = gdbCommand;
+    self->gdb->setProgram(gdbCommand);
 }
 
 void DebugManager::stackListFrames()
 {
 
+}
+
+void DebugManager::setGdbArgs(QStringList gdbArgs)
+{
+    self->gdb->setArguments(gdbArgs);
 }
 
 void DebugManager::processLine(const QString &line)
@@ -435,6 +516,9 @@ void DebugManager::processLine(const QString &line)
 
     QString sOut;
     QTextStream(&sOut)
+#if 1
+        << "gdbResponse: " << line << "\n";
+#else
         << "type: " << QMap<mi::Response::Type_t, QString>{
                 { mi::Response::unknown, "unknown" },
                 { mi::Response::notify, "notify" },
@@ -447,6 +531,7 @@ void DebugManager::processLine(const QString &line)
         << "message: " << r.message << "\n"
         << "token: " << r.token << "\n"
         << "payload: " << QJsonDocument::fromVariant(r.payload).toJson() << "\n\n";
+#endif
     emit streamDebugInternal(sOut);
 
     switch (r.type) {
@@ -467,18 +552,22 @@ void DebugManager::processLine(const QString &line)
              } },
             { "breakpoint-modified", [this](const mi::Response& r) {
                  auto data = r.payload.toMap();
-                 auto bp = data.value("bkpt").toMap();
-                 emit breakpointModified(gdb::Breakpoint::parseMap(bp));
+                 auto bp = gdb::Breakpoint::parseMap(data.value("bkpt").toMap());
+                 self->breakpoints.insert(bp.number, bp);
+                 emit breakpointModified(bp);
              } },
             { "breakpoint-created", [this](const mi::Response& r) {
                  auto data = r.payload.toMap();
-                 auto bp = data.value("bkpt").toMap();
-                 emit breakpointModified(gdb::Breakpoint::parseMap(bp));
+                 auto bp = gdb::Breakpoint::parseMap(data.value("bkpt").toMap());
+                 self->breakpoints.insert(bp.number, bp);
+                 emit breakpointModified(bp);
              } },
             { "breakpoint-deleted", [this](const mi::Response& r) {
                  auto data = r.payload.toMap();
                  auto id = data.value("id").toInt();
-                 emit breakpointRemoved(id);
+                 auto bp = self->breakpoints.value(id);
+                 self->breakpoints.remove(id);
+                 emit breakpointRemoved(bp);
              } },
         };
         responseDispatcher.value(r.message, noop)(r);
@@ -519,9 +608,14 @@ void DebugManager::processLine(const QString &line)
             for (const auto& k: r.payload.toMap().keys())
                 doneDispatcher.value(k, noop)(r);
         } else if (r.message == "connected") {
+            self->m_remote = true;
             emit targetRemoteConnected();
         } else if (r.message == "error") {
             emit gdbError(mi::escapedText(r.payload.toMap().value("msg").toString()));
+        } else if (r.message == "exit") {
+            self->m_remote = false;
+            self->m_firstPromt.store(false);
+            emit terminated();
         }
         emit result(r.token, r.message, r.payload);
         break;
@@ -532,6 +626,9 @@ void DebugManager::processLine(const QString &line)
         emit streamConsole(mi::escapedText(r.message));
         break;
     case mi::Response::promt:
+        if (self->m_firstPromt.exchange(false)) {
+            emit started();
+        }
         emit gdbPromt();
         break;
     case mi::Response::log:
@@ -560,7 +657,18 @@ gdb::Frame gdb::Frame::parseMap(const QVariantMap &data)
 gdb::Breakpoint gdb::Breakpoint::parseMap(const QVariantMap &data)
 {
     gdb::Breakpoint bp;
-    // TODO Implement me
+    bp.number = data.value("number").toInt();
+    bp.type = data.value("type").toString();
+    bp.disp = strmap({{ "keep", keep }, { "del", del }}, data.value("disp").toString(), keep);
+    bp.enable = strmap({{ "y", true }, { "n", false }}, data.value("enable").toString(), true);
+    bp.addr = data.value("addr").toString().toULongLong(nullptr, 16);
+    bp.func = data.value("func").toString();
+    bp.file = data.value("file").toString();
+    bp.fullname = data.value("fullname").toString();
+    bp.line = data.value("line").toInt();
+    bp.threadGroups = data.value("thread-groups").toStringList();
+    bp.times = data.value("times").toInt();
+    bp.originalLocation = data.value("original-location").toString();
     return bp;
 }
 
@@ -580,10 +688,7 @@ gdb::Thread gdb::Thread::parseMap(const QVariantMap &data)
     t.targetId = data.value("target-id").toString();
     t.details = data.value("details").toString();
     t.name = data.value("name").toString();
-    t.state = QMap<QString, gdb::Thread::State_t>{
-        { "stopped", Stopped },
-        { "running", Running },
-    }.value(data.value("state").toString(), Unknown);
+    t.state = strmap({{ "stopped", Stopped }, { "running", Running }}, data.value("state").toString(), Unknown);
     t.frame = Frame::parseMap(data.value("frame").toMap());
     t.core = data.value("core").toInt();
     return t;

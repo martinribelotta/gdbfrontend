@@ -13,11 +13,13 @@ struct Variable {
     QString type;
     QString value;
 
+    bool isValid() const { return !name.isEmpty() && !value.isEmpty(); }
+
     static Variable parseMap(const QVariantMap& data);
 };
 
 struct Frame {
-    int level;
+    int level = -1;
     QString func;
     quint64 addr;
     QHash<QString, QString> params;
@@ -25,13 +27,15 @@ struct Frame {
     QString fullpath;
     int line;
 
+    bool isValid() const { return level != -1; }
+
     static Frame parseMap(const QVariantMap& data);
 };
 
 struct Breakpoint {
-    int number;
+    int number = -1;
     QString type;
-    QString disp;
+    enum Disp_t { keep, del } disp;
     bool enable;
     quint64 addr;
     QString func;
@@ -41,6 +45,8 @@ struct Breakpoint {
     QList<QString> threadGroups;
     int times;
     QString originalLocation;
+
+    bool isValid() const { return number != -1; }
 
     static Breakpoint parseMap(const QVariantMap& data);
 };
@@ -73,11 +79,17 @@ public:
 
     Q_PROPERTY(QString gdbCommand READ gdbCommand WRITE setGdbCommand)
     Q_PROPERTY(bool remote READ isRemote)
+    Q_PROPERTY(QStringList gdbArgs READ gdbArgs WRITE setGdbArgs)
 
     static DebugManager *instance();
 
+    QStringList gdbArgs() const;
     QString gdbCommand() const;
     bool isRemote() const;
+    QList<gdb::Breakpoint> allBreakpoints() const;
+    QList<gdb::Breakpoint> breakpointsForFile(const QString& filePath) const;
+    gdb::Breakpoint breakpointById(int id) const;
+    gdb::Breakpoint breakpointByFileLine(const QString& path, int line) const;
 
 public slots:
     void execute();
@@ -88,6 +100,7 @@ public slots:
                             const ResponseHandler_t& handler,
                             ResponseAction_t action = ResponseAction_t::Temporal);
 
+    void breakRemove(int bpid);
     void breakInsert(const QString& path);
 
     void loadExecutable(const QString& file);
@@ -104,8 +117,11 @@ public slots:
 
     void stackListFrames();
 
+    void setGdbArgs(QStringList gdbArgs);
+
 signals:
     void started();
+    void terminated();
     void gdbPromt();
     void targetRemoteConnected();
     void gdbError(const QString& msg);
@@ -120,7 +136,7 @@ signals:
 
     void breakpointInserted(const gdb::Breakpoint& bp);
     void breakpointModified(const gdb::Breakpoint& bp);
-    void breakpointRemoved(int id);
+    void breakpointRemoved(const gdb::Breakpoint& bp);
 
     void result(int token, const QString& reason, const QVariant& results); // <token>^...
     void streamConsole(const QString& text);
