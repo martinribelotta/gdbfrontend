@@ -1,5 +1,5 @@
 [Desktop Entry]
-Categories=Development;Debugger
+Categories=Development;Debugger;
 Comment=Simple GDB frontend
 Exec=gdbfront
 GenericName=GdbFront
