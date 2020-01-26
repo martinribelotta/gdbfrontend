@@ -38,11 +38,10 @@ make distclean
 MXE=/usr/lib/mxe/usr
 MXEQT=${MXE}/${MXE_TRIPLE}/qt5
 PATH=${MXE}/bin:${PATH}
-MXE_PKG=gdbfront-${VERSION}-win32
+MXE_PKG=GdbFront-${VERSION}-win32
 ${MXEQT}/bin/qmake CONFIG+=release CONFIG+=force_debug_info gdbfront.pro
 make -j4
-mkdir ${MXE_PKG}
-mv ${PWD}/release/gdbfront.exe ${MXE_PKG}
+mv ${PWD}/build ${MXE_PKG}
 pydeployqt --objdump ${MXE_TRIPLE}-objdump ${MXE_PKG}/gdbfront.exe \
 	--libs ${MXE}/${MXE_TRIPLE}/bin/:${MXEQT}/bin/:${MXEQT}/lib/ \
 	--extradll Qt5Svg.dll:Qt5Qml.dll:libjpeg-9.dll \
