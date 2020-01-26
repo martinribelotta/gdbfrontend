@@ -15,10 +15,35 @@
 #include <QTemporaryFile>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QDir>
+#include <QFileSystemModel>
 
 #include <QtDebug>
 
-static const QRegularExpression UNWANTED_PATH{R"(/(usr|opt|lib)/.*)"};
+static const QRegularExpression UNWANTED_PATH{R"(/(usr|opt|lib|arm-none-eabi)/.*)"};
+
+static QString find_root(const QStringList& list)
+{
+    QString root = list.front();
+    for(const auto& item : list)
+    {
+        if (root.length() > item.length())
+        {
+            root.truncate(item.length());
+        }
+
+        for(int i = 0; i < root.length(); ++i)
+        {
+            if (root[i] != item[i])
+            {
+                root.truncate(i);
+                break;
+            }
+        }
+    }
+
+    return root;
+}
 
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
@@ -91,7 +116,15 @@ Widget::Widget(QWidget *parent)
         if (currIdx != -1)
             ui->threadSelector->setCurrentIndex(currIdx);
     });
-    auto openFile = [this](const QString& fullpath) -> bool {
+    auto ensureTreeViewVisible = [this](const QString& fullpath) {
+        auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
+        if (model) {
+            auto idx = model->index(fullpath);
+            if (idx.isValid())
+                ui->treeView->setCurrentIndex(idx);
+        }
+    };
+    auto openFile = [this, ensureTreeViewVisible](const QString& fullpath) -> bool {
         QFile f{fullpath};
         if (!f.open(QFile::ReadOnly)) {
             qDebug() << "error opening file " << fullpath << f.errorString();
@@ -101,34 +134,27 @@ Widget::Widget(QWidget *parent)
         ui->textEdit->setWindowFilePath(fullpath);
         ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
         ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_CIRCLE);
-        auto model = qobject_cast<QStandardItemModel*>(ui->listView->model());
-        if (model) {
-            for (int i=0; i<model->rowCount(); i++) {
-                auto item = model->item(i);
-                if (item->data().toString() == fullpath) {
-                    ui->listView->setCurrentIndex(model->indexFromItem(item));
-                }
-            }
-        }
         auto bpList = DebugManager::instance()->breakpointsForFile(fullpath);
         for (const auto& bp: bpList)
             ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
+        ensureTreeViewVisible(fullpath);
         return true;
     };
-    connect(ui->listView, &QListView::activated, [this, openFile](const QModelIndex& idx) {
-        auto model = qobject_cast<QStandardItemModel*>(ui->listView->model());
+    connect(ui->treeView, &QListView::activated, [this, openFile](const QModelIndex& idx) {
+        auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
         if (!model)
             return;
-        auto item = model->itemFromIndex(idx);
-        if (!item)
-            return;
-        auto fullpath = item->data().toString();
-        openFile(fullpath);
+        auto info = model->fileInfo(idx);
+        if (info.isFile())
+            openFile(info.absoluteFilePath());
     });
-    connect(g, &DebugManager::updateCurrentFrame, [this, openFile](const gdb::Frame& frame) {
-        if (frame.fullpath != ui->textEdit->windowFilePath())
+    connect(g, &DebugManager::updateCurrentFrame, [this, openFile, ensureTreeViewVisible](const gdb::Frame& frame) {
+        if (frame.fullpath != ui->textEdit->windowFilePath()) {
             if (!openFile(frame.fullpath))
                 return;
+        } else {
+            ensureTreeViewVisible(frame.fullpath);
+        }
         int line = frame.line - 1;
         ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
         ui->textEdit->markerAdd(line, QsciScintilla::SC_MARK_BACKGROUND);
@@ -254,33 +280,36 @@ Widget::Widget(QWidget *parent)
                 ui->contextFrameView->model()->deleteLater();
             if (ui->stackTraceView->model())
                 ui->stackTraceView->model()->deleteLater();
-            if (ui->listView->model())
-                ui->listView->model()->deleteLater();
+            if (ui->treeView->model())
+                ui->treeView->model()->deleteLater();
             ui->gdbOut->clear();
         }
     };
     auto updateSourceFiles = [this]() {
         DebugManager::instance()->commandAndResponse(
             "-file-list-exec-source-files", [this](const QVariant& res) {
-                auto fileList = res.toMap().value("files").toList();
-                auto model = new QStandardItemModel(this);
-                if (ui->listView->model())
-                    ui->listView->model()->deleteLater();
-                ui->listView->setModel(model);
+                auto fileListData = res.toMap().value("files").toList();
                 QSet<QString> files;
-                for (const auto& e: fileList) {
+                for (const auto& e: fileListData) {
                     auto v = e.toMap();
                     auto info = QFileInfo{v.value("fullname").toString()};
                     if (info.exists() && !UNWANTED_PATH.match(info.absoluteFilePath()).hasMatch()) {
                         files.insert(info.absoluteFilePath());
                     }
                 }
-                for (const auto& e: files) {
-                    auto info = QFileInfo{e};
-                    auto item = new QStandardItem{info.fileName()};
-                    item->setData(info.absoluteFilePath());
-                    model->appendRow(item);
-                }
+                auto fileList = files.toList();
+                auto commonRoot = find_root(fileList);
+                auto model = new QFileSystemModel(this);
+                model->setReadOnly(true);
+                model->setRootPath(commonRoot);
+                if (ui->treeView->model())
+                    ui->treeView->model()->deleteLater();
+                ui->treeView->setModel(model);
+                ui->treeView->setRootIndex(model->index(commonRoot));
+                ui->treeView->setRootIsDecorated(false);
+                for (int i=1; i<model->columnCount(); i++)
+                    ui->treeView->hideColumn(i);
+                DebugManager::instance()->command("-stack-info-frame");
             });
     };
     connect(g, &DebugManager::started, [setEnable, updateSourceFiles]() {
@@ -312,6 +341,19 @@ Widget::Widget(QWidget *parent)
             qDebug() << "not model for stack trace view";
     });
     connect(ui->buttonAbout, &QToolButton::clicked, []() { DialogAbout().exec(); });
+    setProperty("aboutToQuit", false);
+    connect(g, &DebugManager::gdbProcessTerminated, [this]() {
+        if (property("aboutToQuit").toBool())
+            close();
+    });
+    connect(ui->buttonAppQuit, &QToolButton::clicked, [this]() {
+        auto g = DebugManager::instance();
+        if (g->isGdbExecuting()) {
+            setProperty("aboutToQuit", true);
+            g->quit();
+        } else
+            close();
+    });
 
     setEnable(false);
 }

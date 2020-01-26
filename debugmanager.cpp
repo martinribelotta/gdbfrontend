@@ -314,12 +314,15 @@ DebugManager::DebugManager(QObject *parent) :
             }
     });
     connect(self->gdb, &QProcess::started, [this]() {
+        emit gdbProcessStarted();
         self->tokenCounter = 0;
         self->buffer.clear();
         self->resposeExpected.clear();
         self->m_remote = false;
         self->m_firstPromt.store(true);
     });
+    connect(self->gdb, QOverload<int>::of(&QProcess::finished),
+            this, &DebugManager::gdbProcessTerminated);
 }
 
 DebugManager::~DebugManager()
@@ -343,6 +346,11 @@ QString DebugManager::gdbCommand() const
 bool DebugManager::isRemote() const
 {
     return self->m_remote;
+}
+
+bool DebugManager::isGdbExecuting() const
+{
+    return self->gdb->state() != QProcess::NotRunning;
 }
 
 QList<gdb::Breakpoint> DebugManager::allBreakpoints() const

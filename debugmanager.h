@@ -79,6 +79,7 @@ public:
 
     Q_PROPERTY(QString gdbCommand READ gdbCommand WRITE setGdbCommand)
     Q_PROPERTY(bool remote READ isRemote)
+    Q_PROPERTY(bool gdbExecuting READ isGdbExecuting)
     Q_PROPERTY(QStringList gdbArgs READ gdbArgs WRITE setGdbArgs)
 
     static DebugManager *instance();
@@ -86,6 +87,8 @@ public:
     QStringList gdbArgs() const;
     QString gdbCommand() const;
     bool isRemote() const;
+    bool isGdbExecuting() const;
+
     QList<gdb::Breakpoint> allBreakpoints() const;
     QList<gdb::Breakpoint> breakpointsForFile(const QString& filePath) const;
     gdb::Breakpoint breakpointById(int id) const;
@@ -120,6 +123,9 @@ public slots:
     void setGdbArgs(QStringList gdbArgs);
 
 signals:
+    void gdbProcessStarted();
+    void gdbProcessTerminated();
+
     void started();
     void terminated();
     void gdbPromt();
