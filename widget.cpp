@@ -77,7 +77,7 @@ Widget::Widget(QWidget *parent)
 
     ed->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
 
-    ed->setFont(QFont{"Monospace, Consolas, Courier"});
+    ed->setFont(QFont{"Monospace, Consolas, Courier", QFont{}.pointSize()});
 
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
@@ -164,24 +164,23 @@ Widget::Widget(QWidget *parent)
         if (margin == 1) {
             auto g = DebugManager::instance();
             auto fullname = ui->textEdit->windowFilePath();
-            auto haveMarker = (ui->textEdit->markersAtLine(line) & (1 << QsciScintilla::SC_MARK_CIRCLE)) != 0;
-            if (!haveMarker) {
+            line++;
+            auto bp = g->breakpointByFileLine(fullname, line);
+            if (!bp.isValid()) {
                 auto bpText = QString{"%1:%2"}.arg(fullname).arg(line);
                 g->breakInsert(bpText);
             } else {
-                auto bp = g->breakpointByFileLine(fullname, line);
-                if (bp.isValid())
-                    g->breakRemove(bp.number);
+                g->breakRemove(bp.number);
             }
         }
     });
     connect(g, &DebugManager::breakpointInserted, [this](const gdb::Breakpoint& bp) {
         if (bp.fullname == ui->textEdit->windowFilePath())
-            ui->textEdit->markerAdd(bp.line, QsciScintilla::SC_MARK_CIRCLE);
+            ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
     });
     connect(g, &DebugManager::breakpointRemoved, [this](const gdb::Breakpoint& bp) {
         if (bp.fullname == ui->textEdit->windowFilePath())
-            ui->textEdit->markerDelete(bp.line, QsciScintilla::SC_MARK_CIRCLE);
+            ui->textEdit->markerDelete(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
     });
     connect(g, &DebugManager::updateLocalVariables, [this](const QList<gdb::Variable>& locals) {
         auto model = new QStandardItemModel(this);
