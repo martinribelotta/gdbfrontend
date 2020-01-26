@@ -1,0 +1,20 @@
+[Desktop Entry]
+Categories=Development;Debugger
+Comment[es_AR]=Frontend GDB simple
+Comment=Simple GDB frontend
+Exec=gdbfront
+GenericName[es_AR]=GdbFront
+GenericName=GdbFront
+Icon=gdbfront
+MimeType=
+Name[es_AR]=GdbFront
+Name=GdbFront
+Path=
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=

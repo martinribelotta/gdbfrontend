@@ -10,7 +10,7 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    QApplication::setApplicationName("gdbfrontend");
+    QApplication::setApplicationName("gdbfront");
     QApplication::setApplicationVersion("0.1");
     QCommandLineParser parser;
     parser.setApplicationDescription("GDB Frontend");

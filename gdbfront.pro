@@ -34,16 +34,29 @@ FORMS += \
     dialogstartdebug.ui \
     widget.ui
 
-# Default rules for deployment.
-qnx: target.path = /tmp/$${TARGET}/bin
-else: unix:!android: target.path = /opt/$${TARGET}/bin
-!isEmpty(target.path): INSTALLS += target
-
-DISTFILES += \
-    .gitignore
-
 RESOURCES += \
     resources/images.qrc \
     resources/licences.qrc
 
-STATECHARTS +=
+unix {
+    QMAKE_LFLAGS_RELEASE += -static-libstdc++ -static-libgcc
+    QMAKE_LFLAGS_DEBUG += -static-libstdc++ -static-libgcc
+    isEmpty(PREFIX) {
+        PREFIX = /usr
+    }
+
+    target.path = $$PREFIX/bin
+
+    desktopfile.files = gdbfront.desktop
+    desktopfile.path = $$PREFIX/share/applications
+
+    iconfiles.files = resources/images/gdbfront.svg resources/images/gdbfront.png
+    iconfiles.path = $$PREFIX/share/icons/default/256x256/apps/
+
+    INSTALLS += desktopfile
+    INSTALLS += iconfiles
+    INSTALLS += target
+}
+
+DISTFILES += \
+    gdbfront.desktop
