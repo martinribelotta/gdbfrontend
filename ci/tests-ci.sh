@@ -25,12 +25,12 @@ make install INSTALL_ROOT=${INSTALL_DIR}
 linuxdeployqt $DESKTOP_FILE -appimage
 (
 APPIMAGE_DIR=${PWD}
-APPIMAGE=${PWD}/gdbfront-${VERSION}-x86_64.AppImage
+APPIMAGE=${PWD}/GdbFront-${VERSION}-x86_64.AppImage
 cd /tmp
 chmod a+x ${APPIMAGE}
 ${APPIMAGE} --appimage-extract
-mv squashfs-root gdbfront-${VERSION}-x86_64
-tar -jcvf ${APPIMAGE_DIR}/gdbfront-${VERSION}-x86_64.tar.bz2 gdbfront-${VERSION}-x86_64
+mv squashfs-root GdbFront-${VERSION}-x86_64
+tar -jcvf ${APPIMAGE_DIR}/GdbFront-${VERSION}-x86_64.tar.bz2 GdbFront-${VERSION}-x86_64
 )
 echo ************** WINDOWS BUILD ***********************
 
