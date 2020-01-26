@@ -41,10 +41,10 @@ PATH=${MXE}/bin:${PATH}
 MXE_PKG=GdbFront-${VERSION}-win32
 ${MXEQT}/bin/qmake CONFIG+=release CONFIG+=force_debug_info gdbfront.pro
 make -j4
-mv ${PWD}/build ${MXE_PKG}
-pydeployqt --objdump ${MXE_TRIPLE}-objdump ${MXE_PKG}/gdbfront.exe \
+pydeployqt --objdump ${MXE_TRIPLE}-objdump build/gdbfront.exe \
 	--libs ${MXE}/${MXE_TRIPLE}/bin/:${MXEQT}/bin/:${MXEQT}/lib/ \
 	--extradll Qt5Svg.dll:Qt5Qml.dll:libjpeg-9.dll \
 	--qmake ${MXEQT}/bin/qmake
+mv build ${MXE_PKG}
 
 zip -9 -r ${MXE_PKG}.zip ${MXE_PKG}
