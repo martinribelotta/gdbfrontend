@@ -393,10 +393,12 @@ gdb::Breakpoint DebugManager::breakpointByFileLine(const QString &path, int line
     return {};
 }
 
+#ifdef Q_OS_WIN
 QString DebugManager::sigintHelperCmd() const
 {
     return self->m_sigintHelperCmd;
 }
+#endif
 
 QStringList DebugManager::gdbArgs() const
 {
@@ -530,10 +532,12 @@ void DebugManager::setGdbArgs(QStringList gdbArgs)
     self->gdb->setArguments(gdbArgs);
 }
 
+#ifdef Q_OS_WIN
 void DebugManager::setSigintHelperCmd(QString sigintHelperCmd)
 {
     self->m_sigintHelperCmd = sigintHelperCmd;
 }
+#endif
 
 void DebugManager::processLine(const QString &line)
 {
