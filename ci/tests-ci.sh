@@ -47,5 +47,8 @@ pydeployqt --objdump ${MXE_TRIPLE}-objdump ${BASE}/build/gdbfront.exe \
 	--extradll Qt5Svg.dll:Qt5Qml.dll:libjpeg-9.dll \
 	--qmake ${MXEQT}/bin/qmake
 mv ${BASE}/build ${MXE_PKG}
-
+wget https://github.com/alirdn/windows-kill/releases/download/1.1.4/windows-kill_Win32_1.1.4_lib_release.zip
+unzip -j windows-kill_Win32_1.1.4_lib_release.zip
+mv windows-kill.exe ${MXE_PKG}
+rm windows-kill_Win32_1.1.4_lib_release.zip
 zip -9 -r ${MXE_PKG}.zip ${MXE_PKG}
