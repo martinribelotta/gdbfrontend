@@ -310,7 +310,9 @@ DebugManager::DebugManager(QObject *parent) :
 {
     gdbprivate::registerMetatypes();
     setGdbCommand(mi::DEFAULT_GDB_COMMAND);
+#ifdef Q_OS_WIN
     setSigintHelperCmd(mi::DEFAULT_SIGINT_HELPER);
+#endif
     connect(self->gdb, &QProcess::readyReadStandardOutput, [this]() {
         for (const auto& c: QString{self->gdb->readAllStandardOutput()})
             switch (c.toLatin1()) {
