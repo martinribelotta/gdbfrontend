@@ -2,5 +2,4 @@
 *.d
 *.elf
 *.moc
-*.pro.user
-
+*.pro.user*

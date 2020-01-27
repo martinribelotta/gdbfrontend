@@ -14,9 +14,14 @@
 
 #include <atomic>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 namespace mi {
 
 constexpr auto DEFAULT_GDB_COMMAND = "gdb";
+constexpr auto DEFAULT_SIGINT_HELPER = "windows-kill -SIGINT %1";
 
 #ifdef Q_OS_WIN
 constexpr auto EOL = "\r\n";
@@ -271,6 +276,9 @@ struct DebugManager::Priv_t
     bool m_remote = false;
     std::atomic_bool m_firstPromt{true};
     QMap<int, gdb::Breakpoint> breakpoints;
+#ifdef Q_OS_WIN
+    QString m_sigintHelperCmd;
+#endif
 
     Priv_t(DebugManager *self) : gdb(new QProcess(self))
     {
@@ -302,6 +310,7 @@ DebugManager::DebugManager(QObject *parent) :
 {
     gdbprivate::registerMetatypes();
     setGdbCommand(mi::DEFAULT_GDB_COMMAND);
+    setSigintHelperCmd(mi::DEFAULT_SIGINT_HELPER);
     connect(self->gdb, &QProcess::readyReadStandardOutput, [this]() {
         for (const auto& c: QString{self->gdb->readAllStandardOutput()})
             switch (c.toLatin1()) {
@@ -382,6 +391,11 @@ gdb::Breakpoint DebugManager::breakpointByFileLine(const QString &path, int line
             return bp;
     }
     return {};
+}
+
+QString DebugManager::sigintHelperCmd() const
+{
+    return self->m_sigintHelperCmd;
 }
 
 QStringList DebugManager::gdbArgs() const
@@ -487,15 +501,18 @@ void DebugManager::commandFinish()
 
 void DebugManager::commandInterrupt()
 {
+#ifdef Q_OS_UNIX
     if (isRemote()) {
         command("-exec-interrupt --all");
     } else {
-#ifdef Q_OS_UNIX
         ::kill(self->gdb->processId(), SIGINT);
-#else
-        // TODO Implement windows stop process
-#endif
     }
+#else
+    auto pid = self->gdb->processId();
+    auto cmd = sigintHelperCmd().arg(pid);
+    if (QProcess::startDetached(cmd))
+        emit gdbError(tr("Cannot send SIGINT to GDB Inferior with pid %1").arg(pid));
+#endif
 }
 
 void DebugManager::setGdbCommand(QString gdbCommand)
@@ -511,6 +528,11 @@ void DebugManager::stackListFrames()
 void DebugManager::setGdbArgs(QStringList gdbArgs)
 {
     self->gdb->setArguments(gdbArgs);
+}
+
+void DebugManager::setSigintHelperCmd(QString sigintHelperCmd)
+{
+    self->m_sigintHelperCmd = sigintHelperCmd;
 }
 
 void DebugManager::processLine(const QString &line)

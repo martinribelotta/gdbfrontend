@@ -82,6 +82,10 @@ public:
     Q_PROPERTY(bool gdbExecuting READ isGdbExecuting)
     Q_PROPERTY(QStringList gdbArgs READ gdbArgs WRITE setGdbArgs)
 
+#ifdef Q_OS_WIN
+    Q_PROPERTY(QString sigintHelperCmd READ sigintHelperCmd WRITE setSigintHelperCmd)
+#endif
+
     static DebugManager *instance();
 
     QStringList gdbArgs() const;
@@ -93,6 +97,10 @@ public:
     QList<gdb::Breakpoint> breakpointsForFile(const QString& filePath) const;
     gdb::Breakpoint breakpointById(int id) const;
     gdb::Breakpoint breakpointByFileLine(const QString& path, int line) const;
+
+#ifdef Q_OS_WIN
+    QString sigintHelperCmd() const;
+#endif
 
 public slots:
     void execute();
@@ -121,6 +129,10 @@ public slots:
     void stackListFrames();
 
     void setGdbArgs(QStringList gdbArgs);
+
+#ifdef Q_OS_WIN
+    void setSigintHelperCmd(QString sigintHelperCmd);
+#endif
 
 signals:
     void gdbProcessStarted();
