@@ -36,6 +36,7 @@ FORMS += \
     widget.ui
 
 RESOURCES += \
+    resources/gdbinit-templates.qrc \
     resources/images.qrc \
     resources/licences.qrc
 

@@ -1,0 +1,29 @@
+[
+    {
+        "name": "Remote OpenOCD target",
+        "preferredGdb": "^[\\w_\\-]+\\-gdb$",
+        "commands": [
+            "target remote localhost:3333",
+            "monitor reset halt",
+            "load",
+            "break main",
+            "continue"
+        ]
+    },
+    {
+        "name": "Remote RISC-V",
+        "preferredGdb": "^riscv64-linux-gnu-gdb$",
+        "commands": [
+            "target remote remote-linux:1234",
+            "break main",
+            "continue"
+        ]
+    },
+    {
+        "name": "Attach to process",
+        "preferredGdb": "^gdb$",
+        "commands": [
+            "target attach 123456"
+        ]
+    }
+]

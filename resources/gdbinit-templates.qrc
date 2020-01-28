@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>gdbinit/localrun.json</file>
+        <file>gdbinit/openocdremote.json</file>
+    </qresource>
+</RCC>

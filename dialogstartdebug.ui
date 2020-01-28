@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>522</width>
-    <height>482</height>
+    <width>298</width>
+    <height>461</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -41,8 +41,11 @@
      </property>
      <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
-       <widget class="QLineEdit" name="editorGdbExecFile">
-        <property name="text">
+       <widget class="QComboBox" name="editorGdbExecFile">
+        <property name="editable">
+         <bool>true</bool>
+        </property>
+        <property name="currentText">
          <string>gdb</string>
         </property>
        </widget>
@@ -64,6 +67,26 @@
       <string>Init script</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QLabel" name="label">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Templates</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboGdbInitTemplates"/>
+        </item>
+       </layout>
+      </item>
       <item>
        <widget class="QPlainTextEdit" name="editorInitScript">
         <property name="plainText">

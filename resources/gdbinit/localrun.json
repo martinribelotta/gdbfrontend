@@ -1,0 +1,9 @@
+{
+    "default": true,
+    "name": "Local Application RUN",
+    "preferredGdb": "^gdb$",
+    "commands": [
+        "break main",
+        "run"
+    ]
+}
