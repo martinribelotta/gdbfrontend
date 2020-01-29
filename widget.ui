@@ -174,7 +174,11 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QTreeView" name="watchView"/>
+          <widget class="QTreeView" name="watchView">
+           <property name="editTriggers">
+            <set>QAbstractItemView::NoEditTriggers</set>
+           </property>
+          </widget>
          </item>
          <item>
           <layout class="QVBoxLayout" name="verticalLayout_2">
