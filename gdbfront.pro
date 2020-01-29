@@ -20,6 +20,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     debugmanager.cpp \
     dialogabout.cpp \
+    dialognewwatch.cpp \
     dialogstartdebug.cpp \
     main.cpp \
     widget.cpp
@@ -27,11 +28,13 @@ SOURCES += \
 HEADERS += \
     debugmanager.h \
     dialogabout.h \
+    dialognewwatch.h \
     dialogstartdebug.h \
     widget.h
 
 FORMS += \
     dialogabout.ui \
+    dialognewwatch.ui \
     dialogstartdebug.ui \
     widget.ui
 

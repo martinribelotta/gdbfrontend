@@ -3,6 +3,7 @@
 
 #include "debugmanager.h"
 #include "dialogabout.h"
+#include "dialognewwatch.h"
 #include "dialogstartdebug.h"
 
 #include <Qsci/qsciscintilla.h>
@@ -140,7 +141,7 @@ Widget::Widget(QWidget *parent)
         ensureTreeViewVisible(fullpath);
         return true;
     };
-    connect(ui->treeView, &QListView::activated, [this, openFile](const QModelIndex& idx) {
+    connect(ui->treeView, &QTreeView::activated, [this, openFile](const QModelIndex& idx) {
         auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
         if (!model)
             return;
@@ -238,6 +239,7 @@ Widget::Widget(QWidget *parent)
         g->command("-thread-info");
         g->command("-stack-list-frames");
         g->command("-stack-list-variables --simple-values");
+        g->traceUpdateAll();
     });
     connect(ui->buttonRun, &QToolButton::clicked, [this]() {
         auto g = DebugManager::instance();
@@ -352,6 +354,68 @@ Widget::Widget(QWidget *parent)
             g->quit();
         } else
             close();
+    });
+
+    auto watchModel = new QStandardItemModel(this);
+    watchModel->setHorizontalHeaderLabels({ tr("Expression"), tr("Value"), tr("Type") });
+    ui->watchView->header()->setStretchLastSection(true);
+    ui->watchView->setModel(watchModel);
+    connect(ui->buttonWatchAdd, &QToolButton::clicked, [this]() {
+        DialogNewWatch d(this);
+        if (d.exec())
+            DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
+    });
+    connect(ui->buttonWatchDel, &QToolButton::clicked, [this, watchModel]() {
+        auto itemsSelected = ui->watchView->selectionModel()->selectedRows(0);
+        for (const auto i: itemsSelected) {
+            auto item = watchModel->itemFromIndex(i);
+            if (item) {
+                auto name = item->text();
+                DebugManager::instance()->traceDelVariable(name);
+            }
+        }
+    });
+    connect(ui->buttonWatchClear, &QToolButton::clicked, [this, watchModel]() {
+        auto g = DebugManager::instance();
+        for (int row=0; row<watchModel->rowCount(); row++) {
+            auto item = watchModel->item(row, 0);
+            if (item) {
+                auto name = item->text();
+                g->traceDelVariable(name);
+            }
+        }
+    });
+    connect(g, &DebugManager::variableCreated, [this, watchModel](const gdb::Variable& var) {
+        watchModel->appendRow({
+            new QStandardItem{var.name},
+            new QStandardItem{var.value},
+            new QStandardItem{var.type}
+        });
+        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
+    });
+    connect(g, &DebugManager::variableDeleted, [this, watchModel](const gdb::Variable& var) {
+        bool removeMore = true;
+        while (removeMore) {
+            auto items = watchModel->findItems(var.name);
+            removeMore = !items.empty();
+            if (removeMore)
+                watchModel->removeRow(items.first()->row());
+        }
+        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
+    });
+    connect(g, &DebugManager::variablesChanged, [this, watchModel](const QStringList& changes) {
+        QList<int> rowsChanged;
+        for (const auto& e: changes)
+            for (const auto& k: watchModel->findItems(e))
+                rowsChanged += k->row();
+        auto g = DebugManager::instance();
+        for (const auto& row: rowsChanged) {
+            auto name = watchModel->item(row, 0)->text();
+            auto item = watchModel->item(row, 1);
+            auto var = g->vatchVars().value(name);
+            item->setText(var.value);
+        }
+        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
     });
 
     setEnable(false);

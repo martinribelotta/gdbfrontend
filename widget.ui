@@ -174,7 +174,7 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QListView" name="watchView"/>
+          <widget class="QTreeView" name="watchView"/>
          </item>
          <item>
           <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -182,7 +182,7 @@
             <number>0</number>
            </property>
            <item>
-            <widget class="QToolButton" name="toolButton_4">
+            <widget class="QToolButton" name="buttonWatchClear">
              <property name="text">
               <string>clear</string>
              </property>
@@ -193,7 +193,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QToolButton" name="toolButton_2">
+            <widget class="QToolButton" name="buttonWatchAdd">
              <property name="icon">
               <iconset resource="resources/images.qrc">
                <normaloff>:/images/list-add.svg</normaloff>:/images/list-add.svg</iconset>
@@ -201,7 +201,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QToolButton" name="toolButton_3">
+            <widget class="QToolButton" name="buttonWatchDel">
              <property name="icon">
               <iconset resource="resources/images.qrc">
                <normaloff>:/images/list-remove.svg</normaloff>:/images/list-remove.svg</iconset>
@@ -255,7 +255,7 @@
             <number>0</number>
            </property>
            <item>
-            <widget class="QToolButton" name="toolButton">
+            <widget class="QToolButton" name="buttonLogClear">
              <property name="icon">
               <iconset resource="resources/images.qrc">
                <normaloff>:/images/edit-clear.svg</normaloff>:/images/edit-clear.svg</iconset>
@@ -378,7 +378,7 @@
  </resources>
  <connections>
   <connection>
-   <sender>toolButton</sender>
+   <sender>buttonLogClear</sender>
    <signal>clicked()</signal>
    <receiver>gdbOut</receiver>
    <slot>clear()</slot>

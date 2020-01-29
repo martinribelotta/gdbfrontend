@@ -21,7 +21,10 @@
 namespace mi {
 
 constexpr auto DEFAULT_GDB_COMMAND = "gdb";
+
+#ifdef Q_OS_WIN
 constexpr auto DEFAULT_SIGINT_HELPER = "windows-kill -SIGINT %1";
+#endif
 
 #ifdef Q_OS_WIN
 constexpr auto EOL = "\r\n";
@@ -276,6 +279,7 @@ struct DebugManager::Priv_t
     bool m_remote = false;
     std::atomic_bool m_firstPromt{true};
     QMap<int, gdb::Breakpoint> breakpoints;
+    QMap<QString, gdb::Variable> varsWatched;
 #ifdef Q_OS_WIN
     QString m_sigintHelperCmd;
 #endif
@@ -329,6 +333,7 @@ DebugManager::DebugManager(QObject *parent) :
         self->tokenCounter = 0;
         self->buffer.clear();
         self->resposeExpected.clear();
+        self->varsWatched.clear();;
         self->m_remote = false;
         self->m_firstPromt.store(true);
     });
@@ -519,19 +524,58 @@ void DebugManager::commandInterrupt()
 #endif
 }
 
+void DebugManager::traceAddVariable(const QString& expr, const QString& name, int frame)
+{
+    auto frameId = frame==-1? "@" : QString{"%1"}.arg(frame);
+    commandAndResponse(QString{"-var-create \"%1\" %2 \"%3\""}.arg(name, frameId, expr), [this](const QVariant& r) {
+        auto m = r.toMap();
+        auto v = gdb::Variable::parseMap(m);
+        self->varsWatched.insert(v.name, v);
+        emit variableCreated(v);
+    });
+}
+
+void DebugManager::traceDelVariable(const QString &name)
+{
+    commandAndResponse(QString{"-var-delete %1"}.arg(name), [this, name](const QVariant&) {
+        emit variableDeleted(self->varsWatched.value(name));
+        self->varsWatched.remove(name);
+    });
+}
+
+void DebugManager::traceUpdateVariable(const QString &name)
+{
+    commandAndResponse(QString{"-var-update --all-values %1"}.arg(name), [this](const QVariant& r) {
+        auto changeList = r.toMap().value("changelist").toList();
+        QStringList changedNames;
+        for(const auto& e: changeList) {
+            auto m = e.toMap();
+            auto name = m.value("name").toString();
+            changedNames += name;
+            auto var = self->varsWatched.value(name);
+            if (m.contains("value"))
+                var.value = m.value("value").toString();
+            if (m.value("type_changed", false).toBool())
+                var.type = m.value("new_type").toString();
+            self->varsWatched.insert(name, var);
+        }
+        emit variablesChanged(changedNames);
+    });
+}
+
 void DebugManager::setGdbCommand(QString gdbCommand)
 {
     self->gdb->setProgram(gdbCommand);
 }
 
-void DebugManager::stackListFrames()
-{
-
-}
-
 void DebugManager::setGdbArgs(QStringList gdbArgs)
 {
     self->gdb->setArguments(gdbArgs);
+}
+
+const QMap<QString, gdb::Variable> &DebugManager::vatchVars() const
+{
+    return self->varsWatched;
 }
 
 #ifdef Q_OS_WIN
@@ -712,8 +756,13 @@ gdb::Variable gdb::Variable::parseMap(const QVariantMap &data)
 {
     gdb::Variable v;
     v.name = data.value("name").toString();
-    v.type = data.value("type").toString();
+    v.numChild = data.value("numchild", 0).toInt();
     v.value = data.value("value").toString();
+    v.type = data.value("type").toString();
+    v.threadId = data.value("thread-id").toString();
+    v.hasMore = data.value("has_more", false).toBool();
+    v.dynamic = data.value("dynamic", false).toBool();
+    v.displayhint = data.value("displayhint").toString();
     return v;
 }
 

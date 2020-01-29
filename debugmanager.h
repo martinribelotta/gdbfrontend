@@ -8,12 +8,26 @@
 
 namespace gdb {
 
+struct VariableChange {
+    QString name;
+    bool inScope;
+    bool typeChanged;
+    bool hasMore;
+};
+
 struct Variable {
     QString name;
-    QString type;
+    int numChild = 0;
     QString value;
+    QString type;
+    QString threadId;
+    bool hasMore = false;
+    bool dynamic = false;
+    QString displayhint;
 
     bool isValid() const { return !name.isEmpty() && !value.isEmpty(); }
+    bool haveType() const { return !type.isEmpty(); }
+    bool isSimple() const { return isValid() && !haveType(); }
 
     static Variable parseMap(const QVariantMap& data);
 };
@@ -120,11 +134,15 @@ public slots:
     void commandFinish();
     void commandInterrupt();
 
+    void traceAddVariable(const QString& expr, const QString& name="-", int frame=-1);
+    void traceDelVariable(const QString& name);
+    void traceUpdateVariable(const QString& name);
+    void traceUpdateAll() { traceUpdateVariable("*"); }
+
     void setGdbCommand(QString gdbCommand);
-
-    void stackListFrames();
-
     void setGdbArgs(QStringList gdbArgs);
+
+    const QMap<QString, gdb::Variable> &vatchVars() const;
 
 #ifdef Q_OS_WIN
     void setSigintHelperCmd(QString sigintHelperCmd);
@@ -151,6 +169,10 @@ signals:
     void breakpointInserted(const gdb::Breakpoint& bp);
     void breakpointModified(const gdb::Breakpoint& bp);
     void breakpointRemoved(const gdb::Breakpoint& bp);
+
+    void variableCreated(const gdb::Variable& v);
+    void variableDeleted(const gdb::Variable& v);
+    void variablesChanged(const QStringList& changedNames);
 
     void result(int token, const QString& reason, const QVariant& results); // <token>^...
     void streamConsole(const QString& text);
