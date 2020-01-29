@@ -15,7 +15,7 @@ public:
     Q_PROPERTY(QString watchName READ watchName WRITE setWatchName)
     Q_PROPERTY(QString watchExpr READ watchExpr WRITE setWatchExpr)
 
-    explicit DialogNewWatch(QWidget *parent = nullptr);
+    explicit DialogNewWatch(const QString& expr, QWidget *parent = nullptr);
     ~DialogNewWatch();
 
     QString watchName() const;

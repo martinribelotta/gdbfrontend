@@ -21,28 +21,34 @@
 
 #include <QtDebug>
 
+namespace conf {
+
+namespace editor {
+
+const auto CARET_FG = QColor("#ff0000ff");
+const auto CARET_BG = QColor("#1f0000ff");
+const auto MARGIN_FG = QColor("#ff888888");
+const auto MARKER_CIRCLE_BG = QColor("#ee1111");
+const auto MARKER_LINE_BG = QColor("#eeee11");
+
+}
+
+}
+
 static const QRegularExpression UNWANTED_PATH{R"(/(usr|opt|lib|arm-none-eabi)/.*)"};
 
 static QString find_root(const QStringList& list)
 {
     QString root = list.front();
-    for(const auto& item : list)
-    {
+    for(const auto& item : list) {
         if (root.length() > item.length())
-        {
             root.truncate(item.length());
-        }
-
         for(int i = 0; i < root.length(); ++i)
-        {
-            if (root[i] != item[i])
-            {
+            if (root[i] != item[i]) {
                 root.truncate(i);
                 break;
             }
-        }
     }
-
     return root;
 }
 
@@ -56,14 +62,14 @@ Widget::Widget(QWidget *parent)
 
     ed->setReadOnly(true);
 
-    ed->setCaretForegroundColor(QColor("#ff0000ff"));
+    ed->setCaretForegroundColor(conf::editor::CARET_FG);
     ed->setCaretLineVisible(true);
-    ed->setCaretLineBackgroundColor(QColor("#1f0000ff"));
+    ed->setCaretLineBackgroundColor(conf::editor::CARET_BG);
     ed->setCaretWidth(2);
 
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsForegroundColor(QColor("#ff888888"));
+    ed->setMarginsForegroundColor(conf::editor::MARGIN_FG);
 
     ed->setMarginType(1, QsciScintilla::SymbolMargin);
     ed->setMarginWidth(1, "00000");
@@ -71,10 +77,10 @@ Widget::Widget(QWidget *parent)
     ed->setMarginSensitivity(1, true);
 
     ed->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
-    ed->setMarkerBackgroundColor(QColor("#ee1111"), QsciScintilla::SC_MARK_CIRCLE);
+    ed->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
 
     ed->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
-    ed->setMarkerBackgroundColor(QColor("#eeee11"), QsciScintilla::SC_MARK_BACKGROUND);
+    ed->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
 
     ed->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
 
@@ -361,7 +367,7 @@ Widget::Widget(QWidget *parent)
     ui->watchView->header()->setStretchLastSection(true);
     ui->watchView->setModel(watchModel);
     connect(ui->buttonWatchAdd, &QToolButton::clicked, [this]() {
-        DialogNewWatch d(this);
+        DialogNewWatch d(ui->textEdit->selectedText(), this);
         if (d.exec())
             DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
     });

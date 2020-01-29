@@ -1,11 +1,12 @@
 #include "dialognewwatch.h"
 #include "ui_dialognewwatch.h"
 
-DialogNewWatch::DialogNewWatch(QWidget *parent) :
+DialogNewWatch::DialogNewWatch(const QString &expr, QWidget *parent) :
     QDialog(parent),
     ui(new Ui::DialogNewWatch)
 {
     ui->setupUi(this);
+    ui->editorExpression->setText(expr);
 }
 
 DialogNewWatch::~DialogNewWatch()
