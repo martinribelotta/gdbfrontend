@@ -289,6 +289,9 @@ Widget::Widget(QWidget *parent)
                 ui->stackTraceView->model()->deleteLater();
             if (ui->treeView->model())
                 ui->treeView->model()->deleteLater();
+            auto wm = qobject_cast<QStandardItemModel*>(ui->watchView->model());
+            if (wm)
+                wm->clear();
             ui->gdbOut->clear();
         }
     };
@@ -372,23 +375,18 @@ Widget::Widget(QWidget *parent)
             DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
     });
     connect(ui->buttonWatchDel, &QToolButton::clicked, [this, watchModel]() {
-        auto itemsSelected = ui->watchView->selectionModel()->selectedRows(0);
-        for (const auto i: itemsSelected) {
+        for (const auto i: ui->watchView->selectionModel()->selectedRows(0)) {
             auto item = watchModel->itemFromIndex(i);
-            if (item) {
-                auto name = item->text();
-                DebugManager::instance()->traceDelVariable(name);
-            }
+            if (item)
+                DebugManager::instance()->traceDelVariable(item->text());
         }
     });
     connect(ui->buttonWatchClear, &QToolButton::clicked, [this, watchModel]() {
         auto g = DebugManager::instance();
         for (int row=0; row<watchModel->rowCount(); row++) {
             auto item = watchModel->item(row, 0);
-            if (item) {
-                auto name = item->text();
-                g->traceDelVariable(name);
-            }
+            if (item)
+                g->traceDelVariable(item->text());
         }
     });
     connect(g, &DebugManager::variableCreated, [this, watchModel](const gdb::Variable& var) {
