@@ -173,7 +173,7 @@ QVariant parseValue(const QString& str, QString::const_iterator& it, QChar termi
 QVariantList parseArray(const QString& str, QString::const_iterator& it)
 {
     QVariantList l;
-    while (it != str.cend()) {
+    while (it != str.cend() && *it != ']') {
         l.append(parseValue(str, it, ']'));
         if (*it == ']') {
             ++it;
@@ -194,7 +194,7 @@ QVariantMap parseDict(const QString& str, QString::const_iterator& it)
 QVariantMap parseKeyVal(const QString& str, QString::const_iterator& it, QChar terminator)
 {
     QVariantMap m;
-    while (it != str.cend()) {
+    while (it != str.cend() && *it != terminator) {
         auto k = parseKey(str, skipspaces(it));
         auto v = parseValue(str, skipspaces(++it), terminator);
         m.insertMulti(k, v);
@@ -511,11 +511,12 @@ void DebugManager::commandFinish()
 void DebugManager::commandInterrupt()
 {
 #ifdef Q_OS_UNIX
-    if (isRemote()) {
+#if 0
+    if (isRemote())
         command("-exec-interrupt --all");
-    } else {
+    else
+#endif
         ::kill(self->gdb->processId(), SIGINT);
-    }
 #else
     auto pid = self->gdb->processId();
     auto cmd = sigintHelperCmd().arg(pid);
@@ -591,8 +592,6 @@ void DebugManager::processLine(const QString &line)
     static const dispatcher_t noop = [](const mi::Response&) {};
 
     auto r = mi::parse_response(line);
-    if (self->resposeExpected.contains(r.token))
-        self->resposeExpected.value(r.token)(r.payload);
 
     QString sOut;
     QTextStream(&sOut)
@@ -653,7 +652,7 @@ void DebugManager::processLine(const QString &line)
         responseDispatcher.value(r.message, noop)(r);
         break;
     case mi::Response::result:
-        if (r.message == "done") {
+        if (r.message == "done" || r.message == "") {
             static const QMap<QString, dispatcher_t> doneDispatcher{
                 { "frame", [this](const mi::Response& r) {
                      auto f = gdb::Frame::parseMap(r.payload.toMap().value("frame").toMap());
@@ -687,6 +686,8 @@ void DebugManager::processLine(const QString &line)
             };
             for (const auto& k: r.payload.toMap().keys())
                 doneDispatcher.value(k, noop)(r);
+            if (self->resposeExpected.contains(r.token))
+                self->resposeExpected.value(r.token)(r.payload);
         } else if (r.message == "connected") {
             self->m_remote = true;
             emit targetRemoteConnected();

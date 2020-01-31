@@ -18,6 +18,9 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileSystemModel>
+#include <QLabel>
+#include <QPropertyAnimation>
+#include <QGraphicsOpacityEffect>
 
 #include <QtDebug>
 
@@ -52,6 +55,22 @@ static QString find_root(const QStringList& list)
     return root;
 }
 
+class ClosableLabel: public QLabel
+{
+public:
+    ClosableLabel(QWidget *parent = nullptr) : QLabel{parent} {
+        setAlignment(Qt::AlignHCenter);
+        setAutoFillBackground(true);
+        setStyleSheet("background-color: rgba(255, 0, 0, 0.75)");
+        setWordWrap(true);
+    }
+
+protected:
+    virtual void mousePressEvent(QMouseEvent *) {
+        hide();
+    }
+};
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
@@ -59,6 +78,13 @@ Widget::Widget(QWidget *parent)
     ui->setupUi(this);
 
     auto ed = ui->textEdit;
+
+    auto msgLabel = new ClosableLabel(this);
+    auto msgLayout = new QVBoxLayout(ed);
+    msgLayout->addWidget(msgLabel);
+    msgLayout->setMargin(0);
+    msgLayout->addSpacerItem(new QSpacerItem(100, 1, QSizePolicy::Expanding, QSizePolicy::MinimumExpanding));
+    msgLabel->hide();
 
     ed->setReadOnly(true);
 
@@ -110,6 +136,10 @@ Widget::Widget(QWidget *parent)
     setProperty("state", "notload");
     connect(ui->commadLine, &QLineEdit::returnPressed, [this]() {
         DebugManager::instance()->command(ui->commadLine->text());
+    });
+    connect(g, &DebugManager::gdbError, [msgLabel](const QString& msg) {
+        msgLabel->setText(msg);
+        msgLabel->show();
     });
     connect(g, &DebugManager::streamDebugInternal, ui->gdbOut, &QTextBrowser::append);
     connect(g, &DebugManager::updateThreads, [this](int curr, const QList<gdb::Thread>& threads) {
@@ -232,7 +262,10 @@ Widget::Widget(QWidget *parent)
         setProperty("executing", true);
     });
     connect(g, &DebugManager::asyncStopped, [this](const QString& reason, const gdb::Frame& frame, const QString& thid, int core) {
-        Q_UNUSED(reason)
+        if (reason == "exited-normally") {
+            DebugManager::instance()->quit();
+            return;
+        }
         Q_UNUSED(thid)
         Q_UNUSED(core)
         Q_UNUSED(frame)

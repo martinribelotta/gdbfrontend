@@ -11,6 +11,18 @@
         ]
     },
     {
+        "name": "ARM OpenOCD target with semihost",
+        "preferredGdb": "^arm\-[\\w_\\-]+\\-gdb$",
+        "commands": [
+            "target remote localhost:3333",
+            "monitor reset halt",
+            "monitor arm semihosting enable",
+            "load",
+            "break main",
+            "continue"
+        ]
+    },
+    {
         "name": "Remote RISC-V",
         "preferredGdb": "^riscv64-linux-gnu-gdb$",
         "commands": [

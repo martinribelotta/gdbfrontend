@@ -84,11 +84,7 @@ class DebugManager : public QObject
     Q_OBJECT
 
 public:
-    enum class ResponseAction_t {
-        Permanent,
-        Temporal
-    };
-
+    enum class ResponseAction_t { Permanent, Temporal };
     using ResponseHandler_t = std::function<void (const QVariant& v)>;
 
     Q_PROPERTY(QString gdbCommand READ gdbCommand WRITE setGdbCommand)
