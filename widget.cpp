@@ -1,7 +1,6 @@
 #include "widget.h"
 #include "ui_widget.h"
 
-#include "debugmanager.h"
 #include "dialogabout.h"
 #include "dialognewwatch.h"
 #include "dialogstartdebug.h"
@@ -24,6 +23,8 @@
 
 #include <QtDebug>
 
+#include <cmath>
+
 namespace conf {
 
 namespace editor {
@@ -39,6 +40,24 @@ const auto MARKER_LINE_BG = QColor("#eeee11");
 }
 
 static const QRegularExpression UNWANTED_PATH{R"(/(usr|opt|lib|arm-none-eabi)/.*)"};
+
+template <typename Func1, typename Func2>
+static inline QMetaObject::Connection weakConnect(
+    typename QtPrivate::FunctionPointer<Func1>::Object *sender, Func1 signal,
+    typename QtPrivate::FunctionPointer<Func2>::Object *receiver, Func2 slot)
+{
+
+    QMetaObject::Connection conn_normal = QObject::connect(sender, signal, receiver, slot);
+
+    QMetaObject::Connection* conn_delete = new QMetaObject::Connection();
+
+    *conn_delete = QObject::connect(sender, signal, [conn_normal, conn_delete](){
+        QObject::disconnect(conn_normal);
+        QObject::disconnect(*conn_delete);
+        delete conn_delete;
+    });
+    return conn_normal;
+}
 
 static QString find_root(const QStringList& list)
 {
@@ -60,6 +79,8 @@ class ClosableLabel: public QLabel
 public:
     ClosableLabel(QWidget *parent = nullptr) : QLabel{parent} {
         setAlignment(Qt::AlignHCenter);
+        auto em = QFontMetrics(font()).height();
+        setMargin(int(0.7 * em));
         setAutoFillBackground(true);
         setStyleSheet("background-color: rgba(255, 0, 0, 0.75)");
         setWordWrap(true);
@@ -94,12 +115,11 @@ Widget::Widget(QWidget *parent)
     ed->setCaretWidth(2);
 
     ed->setMarginType(0, QsciScintilla::NumberMargin);
-    ed->setMarginWidth(0, "00000");
     ed->setMarginsForegroundColor(conf::editor::MARGIN_FG);
 
     ed->setMarginType(1, QsciScintilla::SymbolMargin);
     ed->setMarginWidth(1, "00000");
-    ed->setMarginMarkerMask(1, 0xF);
+    ed->setMarginMarkerMask(1, 0x3);
     ed->setMarginSensitivity(1, true);
 
     ed->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
@@ -132,15 +152,14 @@ Widget::Widget(QWidget *parent)
     ui->stackTraceView->verticalHeader()->hide();
     ui->stackTraceView->horizontalHeader()->setStretchLastSection(true);
 
-    auto g = DebugManager::instance();
     setProperty("state", "notload");
     connect(ui->commadLine, &QLineEdit::returnPressed, [this]() {
         DebugManager::instance()->command(ui->commadLine->text());
     });
-    connect(g, &DebugManager::gdbError, [msgLabel](const QString& msg) {
-        msgLabel->setText(msg);
-        msgLabel->show();
-    });
+
+    auto g = DebugManager::instance();
+    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::setText);
+    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::show);
     connect(g, &DebugManager::streamDebugInternal, ui->gdbOut, &QTextBrowser::append);
     connect(g, &DebugManager::updateThreads, [this](int curr, const QList<gdb::Thread>& threads) {
         ui->threadSelector->clear();
@@ -153,39 +172,16 @@ Widget::Widget(QWidget *parent)
         if (currIdx != -1)
             ui->threadSelector->setCurrentIndex(currIdx);
     });
-    auto ensureTreeViewVisible = [this](const QString& fullpath) {
+
+    connect(ui->treeView, &QTreeView::activated, [this](const QModelIndex& idx) {
         auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
         if (model) {
-            auto idx = model->index(fullpath);
-            if (idx.isValid())
-                ui->treeView->setCurrentIndex(idx);
+            auto info = model->fileInfo(idx);
+            if (info.isFile())
+                openFile(info.absoluteFilePath());
         }
-    };
-    auto openFile = [this, ensureTreeViewVisible](const QString& fullpath) -> bool {
-        QFile f{fullpath};
-        if (!f.open(QFile::ReadOnly)) {
-            qDebug() << "error opening file " << fullpath << f.errorString();
-            return false;
-        }
-        ui->textEdit->read(&f);
-        ui->textEdit->setWindowFilePath(fullpath);
-        ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
-        ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_CIRCLE);
-        auto bpList = DebugManager::instance()->breakpointsForFile(fullpath);
-        for (const auto& bp: bpList)
-            ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
-        ensureTreeViewVisible(fullpath);
-        return true;
-    };
-    connect(ui->treeView, &QTreeView::activated, [this, openFile](const QModelIndex& idx) {
-        auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
-        if (!model)
-            return;
-        auto info = model->fileInfo(idx);
-        if (info.isFile())
-            openFile(info.absoluteFilePath());
     });
-    connect(g, &DebugManager::updateCurrentFrame, [this, openFile, ensureTreeViewVisible](const gdb::Frame& frame) {
+    connect(g, &DebugManager::updateCurrentFrame, [this](const gdb::Frame& frame) {
         if (frame.fullpath != ui->textEdit->windowFilePath()) {
             if (!openFile(frame.fullpath))
                 return;
@@ -198,18 +194,8 @@ Widget::Widget(QWidget *parent)
         ui->textEdit->ensureLineVisible(line);
     });
     connect(ed, &QsciScintilla::marginClicked, [this](int margin, int line, Qt::KeyboardModifiers) {
-        if (margin == 1) {
-            auto g = DebugManager::instance();
-            auto fullname = ui->textEdit->windowFilePath();
-            line++;
-            auto bp = g->breakpointByFileLine(fullname, line);
-            if (!bp.isValid()) {
-                auto bpText = QString{"%1:%2"}.arg(fullname).arg(line);
-                g->breakInsert(bpText);
-            } else {
-                g->breakRemove(bp.number);
-            }
-        }
+        if (margin == 1)
+            toggleBreakpointAt(ui->textEdit->windowFilePath(), line+1);
     });
     connect(g, &DebugManager::breakpointInserted, [this](const gdb::Breakpoint& bp) {
         if (bp.fullname == ui->textEdit->windowFilePath())
@@ -257,109 +243,25 @@ Widget::Widget(QWidget *parent)
     });
     connect(g, &DebugManager::asyncRunning, [this](const QString& thid) {
         Q_UNUSED(thid)
-        ui->textEdit->setEnabled(false);
         ui->buttonRun->setIcon(QIcon{":/images/debug-pause-v2.svg"});
-        setProperty("executing", true);
     });
     connect(g, &DebugManager::asyncStopped, [this](const QString& reason, const gdb::Frame& frame, const QString& thid, int core) {
-        if (reason == "exited-normally") {
-            DebugManager::instance()->quit();
-            return;
-        }
         Q_UNUSED(thid)
         Q_UNUSED(core)
         Q_UNUSED(frame)
-        ui->textEdit->setEnabled(true);
-        ui->buttonRun->setIcon(QIcon{":/images/debug-run-v2.svg"});
-        setProperty("executing", false);
-
-        auto g = DebugManager::instance();
-        g->command("-stack-info-frame");
-        g->command("-thread-info");
-        g->command("-stack-list-frames");
-        g->command("-stack-list-variables --simple-values");
-        g->traceUpdateAll();
-    });
-    connect(ui->buttonRun, &QToolButton::clicked, [this]() {
-        auto g = DebugManager::instance();
-        if (property("executing").toBool())
-            g->commandInterrupt();
-        else
-            g->commandContinue();
-    });
-    connect(ui->buttonDebugStart, &QToolButton::clicked, [this]() {
-        DialogStartDebug d{this};
-        if (d.exec() == QDialog::Accepted) {
-            QStringList argv;
-            if (d.needWriteInitScript()) {
-                auto gdbinit = new QTemporaryFile{".gdbinit-XXXXXX", this};
-                if (gdbinit->open()) {
-                    gdbinit->write(d.initScript().toLocal8Bit());
-                    gdbinit->close();
-                    argv.append({ "-x", gdbinit->fileName() });
-                }
-            } else {
-                argv.append({ "-x", d.initScriptName() });
-            }
-            argv.append(d.executableFile());
-            auto g = DebugManager::instance();
-            g->setGdbArgs(argv);
-            g->setGdbCommand(d.gdbExecutable());
-            g->execute();
+        if (reason == "exited-normally") {
+            DebugManager::instance()->quit();
+        } else {
+            ui->buttonRun->setIcon(QIcon{":/images/debug-run-v2.svg"});
+            triggerUpdateContext();
+            DebugManager::instance()->traceUpdateAll();
         }
     });
-    auto setEnable = [this](bool en) {
-        for (auto& b: ui->buttonGroup->buttons())
-            b->setEnabled(en);
-        ui->splitterOuter->setEnabled(en);
-        ui->buttonDebugStart->setEnabled(!en);
-        if (!en) {
-            ui->threadSelector->clear();
-            ui->textEdit->clear();
-            if (ui->contextFrameView->model())
-                ui->contextFrameView->model()->deleteLater();
-            if (ui->stackTraceView->model())
-                ui->stackTraceView->model()->deleteLater();
-            if (ui->treeView->model())
-                ui->treeView->model()->deleteLater();
-            auto wm = qobject_cast<QStandardItemModel*>(ui->watchView->model());
-            if (wm)
-                wm->clear();
-            ui->gdbOut->clear();
-        }
-    };
-    auto updateSourceFiles = [this]() {
-        DebugManager::instance()->commandAndResponse(
-            "-file-list-exec-source-files", [this](const QVariant& res) {
-                auto fileListData = res.toMap().value("files").toList();
-                QSet<QString> files;
-                for (const auto& e: fileListData) {
-                    auto v = e.toMap();
-                    auto info = QFileInfo{v.value("fullname").toString()};
-                    if (info.exists() && !UNWANTED_PATH.match(info.absoluteFilePath()).hasMatch()) {
-                        files.insert(info.absoluteFilePath());
-                    }
-                }
-                auto fileList = files.toList();
-                auto commonRoot = find_root(fileList);
-                auto model = new QFileSystemModel(this);
-                model->setReadOnly(true);
-                model->setRootPath(commonRoot);
-                if (ui->treeView->model())
-                    ui->treeView->model()->deleteLater();
-                ui->treeView->setModel(model);
-                ui->treeView->setRootIndex(model->index(commonRoot));
-                ui->treeView->setRootIsDecorated(false);
-                for (int i=1; i<model->columnCount(); i++)
-                    ui->treeView->hideColumn(i);
-                DebugManager::instance()->command("-stack-info-frame");
-            });
-    };
-    connect(g, &DebugManager::started, [setEnable, updateSourceFiles]() {
-        updateSourceFiles();
-        setEnable(true);
-    });
-    connect(g, &DebugManager::terminated, [setEnable]() { setEnable(false); });
+    connect(ui->buttonRun, &QToolButton::clicked, this, &Widget::toggleRunStop);
+    connect(ui->buttonDebugStart, &QToolButton::clicked, this, &Widget::startDebuggin);
+    connect(g, &DebugManager::started, this, &Widget::updateSourceFiles);
+    connect(g, &DebugManager::started, this, &Widget::enableGuiItems);
+    connect(g, &DebugManager::terminated, this, &Widget::disableGuiItems);
     connect(ui->buttonQuit, &QToolButton::clicked, g, &DebugManager::quit);
     connect(ui->buttonNext, &QToolButton::clicked, g, &DebugManager::commandNext);
     connect(ui->buttonNextInto, &QToolButton::clicked, g, &DebugManager::commandStep);
@@ -370,33 +272,16 @@ Widget::Widget(QWidget *parent)
             auto item = m->item(idx.row(), 0);
             if (item) {
                 auto frame = item->data().value<gdb::Frame>();
-                auto g = DebugManager::instance();
-                g->commandAndResponse(QString{"-stack-select-frame %1"}.arg(frame.level), [](const QVariant&) {
-                    auto g = DebugManager::instance();
-                    g->command("-stack-info-frame");
-                    g->command("-thread-info");
-                    g->command("-stack-list-frames");
-                    g->command("-stack-list-variables --simple-values");
-                });
+                DebugManager::instance()->commandAndResponse(
+                    QString{"-stack-select-frame %1"}.arg(frame.level),
+                    [this](const QVariant&) { triggerUpdateContext(); });
             } else
                 qDebug() << "not item for model" << idx;
         } else
             qDebug() << "not model for stack trace view";
     });
     connect(ui->buttonAbout, &QToolButton::clicked, []() { DialogAbout().exec(); });
-    setProperty("aboutToQuit", false);
-    connect(g, &DebugManager::gdbProcessTerminated, [this]() {
-        if (property("aboutToQuit").toBool())
-            close();
-    });
-    connect(ui->buttonAppQuit, &QToolButton::clicked, [this]() {
-        auto g = DebugManager::instance();
-        if (g->isGdbExecuting()) {
-            setProperty("aboutToQuit", true);
-            g->quit();
-        } else
-            close();
-    });
+    connect(ui->buttonAppQuit, &QToolButton::clicked, this, &Widget::close);
 
     auto watchModel = new QStandardItemModel(this);
     watchModel->setHorizontalHeaderLabels({ tr("Expression"), tr("Value"), tr("Type") });
@@ -455,7 +340,7 @@ Widget::Widget(QWidget *parent)
         ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
     });
 
-    setEnable(false);
+    disableGuiItems();
 }
 
 Widget::~Widget()
@@ -463,3 +348,149 @@ Widget::~Widget()
     delete ui;
 }
 
+void Widget::closeEvent(QCloseEvent *e)
+{
+    auto g = DebugManager::instance();
+    if (g->isGdbExecuting()) {
+        weakConnect(g, &DebugManager::gdbProcessTerminated, this, &Widget::close);
+        g->quit();
+        e->ignore();
+    } else
+        e->accept();
+
+}
+
+void Widget::ensureTreeViewVisible(const QString &fullpath)
+{
+    auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
+    if (model) {
+        auto idx = model->index(fullpath);
+        if (idx.isValid())
+            ui->treeView->setCurrentIndex(idx);
+    }
+}
+
+void Widget::setItemsEnable(bool en)
+{
+    for (auto& b: ui->buttonGroup->buttons())
+        b->setEnabled(en);
+    ui->splitterOuter->setEnabled(en);
+    ui->buttonDebugStart->setEnabled(!en);
+    if (!en) {
+        ui->threadSelector->clear();
+        ui->textEdit->clear();
+        if (ui->contextFrameView->model())
+            ui->contextFrameView->model()->deleteLater();
+        if (ui->stackTraceView->model())
+            ui->stackTraceView->model()->deleteLater();
+        if (ui->treeView->model())
+            ui->treeView->model()->deleteLater();
+        auto wm = qobject_cast<QStandardItemModel*>(ui->watchView->model());
+        if (wm)
+            wm->clear();
+        ui->gdbOut->clear();
+    }
+}
+
+void Widget::updateSourceFiles()
+{
+    DebugManager::instance()->commandAndResponse(
+        "-file-list-exec-source-files", [this](const QVariant& res) {
+            auto fileListData = res.toMap().value("files").toList();
+            QSet<QString> files;
+            for (const auto& e: fileListData) {
+                auto v = e.toMap();
+                auto info = QFileInfo{v.value("fullname").toString()};
+                if (info.exists() && !UNWANTED_PATH.match(info.absoluteFilePath()).hasMatch()) {
+                    files.insert(info.absoluteFilePath());
+                }
+            }
+            auto fileList = files.toList();
+            auto commonRoot = find_root(fileList);
+            auto model = new QFileSystemModel(this);
+            model->setReadOnly(true);
+            model->setRootPath(commonRoot);
+            if (ui->treeView->model())
+                ui->treeView->model()->deleteLater();
+            ui->treeView->setModel(model);
+            ui->treeView->setRootIndex(model->index(commonRoot));
+            ui->treeView->setRootIsDecorated(false);
+            for (int i=1; i<model->columnCount(); i++)
+                ui->treeView->hideColumn(i);
+            DebugManager::instance()->command("-stack-info-frame");
+    });
+}
+
+bool Widget::openFile(const QString &fullpath)
+{
+    QFile f{fullpath};
+    if (!f.open(QFile::ReadOnly)) {
+        qDebug() << "error opening file " << fullpath << f.errorString();
+        return false;
+    }
+    ui->textEdit->read(&f);
+    int chars = ::log10(ui->textEdit->lines()) + 1;
+    int w = QFontMetrics(ui->textEdit->font()).width("00") * chars;
+    ui->textEdit->setMarginWidth(0, w);
+    ui->textEdit->setWindowFilePath(fullpath);
+    ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
+    ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_CIRCLE);
+    auto bpList = DebugManager::instance()->breakpointsForFile(fullpath);
+    for (const auto& bp: bpList)
+        ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
+    ensureTreeViewVisible(fullpath);
+    return true;
+}
+
+void Widget::toggleBreakpointAt(const QString &file, int line)
+{
+    auto g = DebugManager::instance();
+    auto bp = g->breakpointByFileLine(file, line);
+    if (!bp.isValid()) {
+        auto bpText = QString{"%1:%2"}.arg(file).arg(line);
+        g->breakInsert(bpText);
+    } else {
+        g->breakRemove(bp.number);
+    }
+}
+
+void Widget::startDebuggin()
+{
+    DialogStartDebug d{this};
+    if (d.exec() == QDialog::Accepted) {
+        QStringList argv;
+        if (d.needWriteInitScript()) {
+            auto gdbinit = new QTemporaryFile{".gdbinit-XXXXXX", this};
+            if (gdbinit->open()) {
+                gdbinit->write(d.initScript().toLocal8Bit());
+                gdbinit->close();
+                argv.append({ "-x", gdbinit->fileName() });
+            }
+        } else {
+            argv.append({ "-x", d.initScriptName() });
+        }
+        argv.append(d.executableFile());
+        auto g = DebugManager::instance();
+        g->setGdbArgs(argv);
+        g->setGdbCommand(d.gdbExecutable());
+        g->execute();
+    }
+}
+
+void Widget::triggerUpdateContext()
+{
+    auto g = DebugManager::instance();
+    g->command("-stack-info-frame");
+    g->command("-thread-info");
+    g->command("-stack-list-frames");
+    g->command("-stack-list-variables --simple-values");
+}
+
+void Widget::toggleRunStop()
+{
+    auto g = DebugManager::instance();
+    if (g->isInferiorRunning())
+        g->commandInterrupt();
+    else
+        g->commandContinue();
+}

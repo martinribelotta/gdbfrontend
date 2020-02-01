@@ -275,8 +275,14 @@ struct DebugManager::Priv_t
     int tokenCounter = 0;
     QProcess *gdb;
     QString buffer;
-    QHash<int, DebugManager::ResponseHandler_t> resposeExpected;
+    struct ResponseEntry {
+        DebugManager::ResponseAction_t action;
+        DebugManager::ResponseHandler_t handler;
+    };
+
+    QHash<int, ResponseEntry> resposeExpected;
     bool m_remote = false;
+    bool m_inferiorRunning = false;
     std::atomic_bool m_firstPromt{true};
     QMap<int, gdb::Breakpoint> breakpoints;
     QMap<QString, gdb::Variable> varsWatched;
@@ -400,6 +406,11 @@ gdb::Breakpoint DebugManager::breakpointByFileLine(const QString &path, int line
     return {};
 }
 
+bool DebugManager::isInferiorRunning() const
+{
+    return self->m_inferiorRunning;
+}
+
 #ifdef Q_OS_WIN
 QString DebugManager::sigintHelperCmd() const
 {
@@ -429,8 +440,8 @@ void DebugManager::quit()
 void DebugManager::command(const QString &cmd)
 {
     auto tokStr = QString{"%1"}.arg(self->tokenCounter, 6, 10, QChar{'0'});
-    self->tokenCounter = (self->tokenCounter + 1) % 999999;
     auto line = QString{"%1%2%3"}.arg(tokStr, cmd, mi::EOL);
+    self->tokenCounter = (self->tokenCounter + 1) % 999999;
     self->gdb->write(line.toLocal8Bit());
     QString sOut;
     QTextStream(&sOut) << "gdbCommand: " << line << "\n";
@@ -441,19 +452,13 @@ void DebugManager::commandAndResponse(const QString& cmd,
                                       const ResponseHandler_t& handler,
                                       ResponseAction_t action)
 {
-    auto currentToken = self->tokenCounter;
-    self->resposeExpected.insert(currentToken, [this, action, handler, currentToken](const QVariant& r) {
-        handler(r);
-        if (action == ResponseAction_t::Temporal)
-            self->resposeExpected.remove(currentToken);
-    });
+    self->resposeExpected.insert(self->tokenCounter, { action, handler });
     command(cmd);
 }
 
 void DebugManager::breakRemove(int bpid)
 {
-    auto cmd = QString{"-break-delete %1"}.arg(bpid);
-    commandAndResponse(cmd, [this, bpid](const QVariant&) {
+    commandAndResponse(QString{"-break-delete %1"}.arg(bpid), [this, bpid](const QVariant&) {
         auto bp = self->breakpoints.value(bpid);
         self->breakpoints.remove(bpid);
         emit breakpointRemoved(bp);
@@ -462,8 +467,7 @@ void DebugManager::breakRemove(int bpid)
 
 void DebugManager::breakInsert(const QString &path)
 {
-    auto cmd = QString{"-break-insert %1"}.arg(path);
-    commandAndResponse(cmd, [this](const QVariant& r) {
+    commandAndResponse(QString{"-break-insert %1"}.arg(path), [this](const QVariant& r) {
         auto data = r.toMap();
         auto bp = gdb::Breakpoint::parseMap(data.value("bkpt").toMap());
         self->breakpoints.insert(bp.number, bp);
@@ -510,18 +514,13 @@ void DebugManager::commandFinish()
 
 void DebugManager::commandInterrupt()
 {
-#ifdef Q_OS_UNIX
-#if 0
-    if (isRemote())
-        command("-exec-interrupt --all");
-    else
-#endif
-        ::kill(self->gdb->processId(), SIGINT);
-#else
+#ifdef Q_OS_WIN
     auto pid = self->gdb->processId();
     auto cmd = sigintHelperCmd().arg(pid);
     if (QProcess::startDetached(cmd))
         emit gdbError(tr("Cannot send SIGINT to GDB Inferior with pid %1").arg(pid));
+#else
+    ::kill(self->gdb->processId(), SIGINT);
 #endif
 }
 
@@ -589,28 +588,11 @@ void DebugManager::setSigintHelperCmd(QString sigintHelperCmd)
 void DebugManager::processLine(const QString &line)
 {
     using dispatcher_t = std::function<void(const mi::Response&)>;
-    static const dispatcher_t noop = [](const mi::Response&) {};
 
     auto r = mi::parse_response(line);
 
     QString sOut;
-    QTextStream(&sOut)
-#if 1
-        << "gdbResponse: " << line << "\n";
-#else
-        << "type: " << QMap<mi::Response::Type_t, QString>{
-                { mi::Response::unknown, "unknown" },
-                { mi::Response::notify, "notify" },
-                { mi::Response::result, "result" },
-                { mi::Response::console, "console" },
-                { mi::Response::log, "log" },
-                { mi::Response::target, "target" },
-                { mi::Response::promt, "promt" }
-               }.value(r.type) << "\n"
-        << "message: " << r.message << "\n"
-        << "token: " << r.token << "\n"
-        << "payload: " << QJsonDocument::fromVariant(r.payload).toJson() << "\n\n";
-#endif
+    QTextStream(&sOut) << "gdbResponse: " << line << "\n";
     emit streamDebugInternal(sOut);
 
     switch (r.type) {
@@ -622,11 +604,13 @@ void DebugManager::processLine(const QString &line)
                 auto thid = data.value("thread-id").toString();
                 auto core = data.value("core").toInt();
                 auto frame = gdb::Frame::parseMap(data.value("frame").toMap());
+                self->m_inferiorRunning = false;
                 emit asyncStopped(reason, frame, thid, core);
              } },
              { "running", [this](const mi::Response& r) {
                  auto data = r.payload.toMap();
                  auto thid = data.value("thread-id").toString();
+                 self->m_inferiorRunning = true;
                  emit asyncRunning(thid);
              } },
             { "breakpoint-modified", [this](const mi::Response& r) {
@@ -649,7 +633,7 @@ void DebugManager::processLine(const QString &line)
                  emit breakpointRemoved(bp);
              } },
         };
-        responseDispatcher.value(r.message, noop)(r);
+        responseDispatcher.value(r.message, [](const mi::Response&){})(r);
         break;
     case mi::Response::result:
         if (r.message == "done" || r.message == "") {
@@ -685,9 +669,13 @@ void DebugManager::processLine(const QString &line)
                  }},
             };
             for (const auto& k: r.payload.toMap().keys())
-                doneDispatcher.value(k, noop)(r);
-            if (self->resposeExpected.contains(r.token))
-                self->resposeExpected.value(r.token)(r.payload);
+                doneDispatcher.value(k, [](const mi::Response&){})(r);
+            if (self->resposeExpected.contains(r.token)) {
+                auto& e = self->resposeExpected.value(r.token);
+                e.handler(r.payload);
+                if (e.action == DebugManager::ResponseAction_t::Temporal)
+                    self->resposeExpected.remove(r.token);
+            }
         } else if (r.message == "connected") {
             self->m_remote = true;
             emit targetRemoteConnected();
@@ -701,15 +689,12 @@ void DebugManager::processLine(const QString &line)
         emit result(r.token, r.message, r.payload);
         break;
     case mi::Response::console:
-        emit streamConsole(mi::escapedText(r.message));
-        break;
     case mi::Response::target:
         emit streamConsole(mi::escapedText(r.message));
         break;
     case mi::Response::promt:
-        if (self->m_firstPromt.exchange(false)) {
+        if (self->m_firstPromt.exchange(false))
             emit started();
-        }
         emit gdbPromt();
         break;
     case mi::Response::log:

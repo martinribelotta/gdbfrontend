@@ -91,6 +91,7 @@ public:
     Q_PROPERTY(bool remote READ isRemote)
     Q_PROPERTY(bool gdbExecuting READ isGdbExecuting)
     Q_PROPERTY(QStringList gdbArgs READ gdbArgs WRITE setGdbArgs)
+    Q_PROPERTY(bool inferiorRunning READ isInferiorRunning)
 #ifdef Q_OS_WIN
     Q_PROPERTY(QString sigintHelperCmd READ sigintHelperCmd WRITE setSigintHelperCmd)
 #endif
@@ -108,6 +109,8 @@ public:
 #ifdef Q_OS_WIN
     QString sigintHelperCmd() const;
 #endif
+    bool isInferiorRunning() const;
+
 public slots:
     void execute();
     void quit();
