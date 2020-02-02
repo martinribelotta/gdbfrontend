@@ -157,7 +157,7 @@ static void configureEditor(QsciScintilla *ed)
     ed->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 }
 
-static void configureSplitters(Ui::Widget *ui)
+static void configureSplitters(Ui::Widget *ui, QWidget *w)
 {
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
@@ -174,16 +174,18 @@ static void configureSplitters(Ui::Widget *ui)
     ui->splitterInner->setStretchFactor(0, 1);
     ui->splitterInner->setStretchFactor(1, 0);
 
+#define _tr(text) QApplication::translate(__func__, text)
     ui->stackTraceView->verticalHeader()->hide();
     ui->stackTraceView->horizontalHeader()->setStretchLastSection(true);
-    ui->stackTraceView->setModel(new StdItemModel({tr("Level"), tr("Function"), tr("File"), tr("Line")}, this));
+    ui->stackTraceView->setModel(new StdItemModel({_tr("Level"), _tr("Function"), _tr("File"), _tr("Line")}, w));
 
     ui->contextFrameView->verticalHeader()->hide();
     ui->contextFrameView->horizontalHeader()->setStretchLastSection(true);
-    ui->contextFrameView->setModel(new StdItemModel({tr("name"), tr("value"), tr("type")}, this));
+    ui->contextFrameView->setModel(new StdItemModel({_tr("name"), _tr("value"), _tr("type")}, w));
 
     ui->watchView->header()->setStretchLastSection(true);
-    ui->watchView->setModel(new StdItemModel({tr("Expression"), tr("Value"), tr("Type")}, this));
+    ui->watchView->setModel(new StdItemModel({_tr("Expression"), _tr("Value"), _tr("Type")}, w));
+#undef _tr
 }
 
 Widget::Widget(QWidget *parent)
@@ -192,7 +194,7 @@ Widget::Widget(QWidget *parent)
 {
     ui->setupUi(this);
     configureEditor(ui->textEdit);
-    configureSplitters(ui);
+    configureSplitters(ui, this);
 
     auto g = DebugManager::instance();
 
