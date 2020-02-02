@@ -92,45 +92,70 @@ protected:
     }
 };
 
+class FileSystemModel: public QFileSystemModel
+{
+    QTreeView *view;
+public:
+    FileSystemModel(const QString& root, QTreeView *w) :
+        QFileSystemModel(w), view(w)
+    {
+        setRootPath(root);
+        setReadOnly(true);
+        view->setModel(this);
+        view->setRootIsDecorated(false);
+        view->setRootIndex(index(root));
+        for (int i=1; i<columnCount(); i++)
+            view->hideColumn(i);
+    }
+
+    virtual ~FileSystemModel() {
+        view->setModel(nullptr);
+    }
+};
+
+static QLabel *createMessageLabel(QWidget *w)
+{
+    auto msgLabel = new ClosableLabel(w);
+    auto msgLayout = new QVBoxLayout(w);
+    auto spacer = new QSpacerItem(100, 1, QSizePolicy::Expanding, QSizePolicy::MinimumExpanding);
+    msgLayout->addWidget(msgLabel);
+    msgLayout->setMargin(0);
+    msgLayout->addSpacerItem(spacer);
+    msgLabel->hide();
+    return msgLabel;
+}
+
 Widget::Widget(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::Widget)
 {
     ui->setupUi(this);
 
-    auto ed = ui->textEdit;
+    auto msgLabel = createMessageLabel(ui->textEdit);
+    ui->textEdit->setReadOnly(true);
 
-    auto msgLabel = new ClosableLabel(this);
-    auto msgLayout = new QVBoxLayout(ed);
-    msgLayout->addWidget(msgLabel);
-    msgLayout->setMargin(0);
-    msgLayout->addSpacerItem(new QSpacerItem(100, 1, QSizePolicy::Expanding, QSizePolicy::MinimumExpanding));
-    msgLabel->hide();
+    ui->textEdit->setCaretForegroundColor(conf::editor::CARET_FG);
+    ui->textEdit->setCaretLineVisible(true);
+    ui->textEdit->setCaretLineBackgroundColor(conf::editor::CARET_BG);
+    ui->textEdit->setCaretWidth(2);
 
-    ed->setReadOnly(true);
+    ui->textEdit->setMarginType(0, QsciScintilla::NumberMargin);
+    ui->textEdit->setMarginsForegroundColor(conf::editor::MARGIN_FG);
 
-    ed->setCaretForegroundColor(conf::editor::CARET_FG);
-    ed->setCaretLineVisible(true);
-    ed->setCaretLineBackgroundColor(conf::editor::CARET_BG);
-    ed->setCaretWidth(2);
+    ui->textEdit->setMarginType(1, QsciScintilla::SymbolMargin);
+    ui->textEdit->setMarginWidth(1, "00000");
+    ui->textEdit->setMarginMarkerMask(1, 0x3);
+    ui->textEdit->setMarginSensitivity(1, true);
 
-    ed->setMarginType(0, QsciScintilla::NumberMargin);
-    ed->setMarginsForegroundColor(conf::editor::MARGIN_FG);
+    ui->textEdit->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
+    ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
 
-    ed->setMarginType(1, QsciScintilla::SymbolMargin);
-    ed->setMarginWidth(1, "00000");
-    ed->setMarginMarkerMask(1, 0x3);
-    ed->setMarginSensitivity(1, true);
+    ui->textEdit->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
+    ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
 
-    ed->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
-    ed->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
+    ui->textEdit->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
 
-    ed->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
-    ed->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
-
-    ed->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
-
-    ed->setFont(QFont{"Monospace, Consolas, Courier", QFont{}.pointSize()});
+    ui->textEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
@@ -147,198 +172,61 @@ Widget::Widget(QWidget *parent)
     ui->splitterInner->setStretchFactor(0, 1);
     ui->splitterInner->setStretchFactor(1, 0);
 
-    ui->contextFrameView->verticalHeader()->hide();
-    ui->contextFrameView->horizontalHeader()->setStretchLastSection(true);
     ui->stackTraceView->verticalHeader()->hide();
     ui->stackTraceView->horizontalHeader()->setStretchLastSection(true);
+    ui->stackTraceView->setModel(new QStandardItemModel(this));
+    static_cast<QStandardItemModel*>(ui->stackTraceView->model())->setHorizontalHeaderLabels({
+        tr("Level"), tr("Function"), tr("File"), tr("Line")
+    });
 
-    setProperty("state", "notload");
-    connect(ui->commadLine, &QLineEdit::returnPressed, [this]() {
-        DebugManager::instance()->command(ui->commadLine->text());
+    ui->contextFrameView->verticalHeader()->hide();
+    ui->contextFrameView->horizontalHeader()->setStretchLastSection(true);
+    ui->contextFrameView->setModel(new QStandardItemModel(this));
+    static_cast<QStandardItemModel*>(ui->contextFrameView->model())->setHorizontalHeaderLabels({
+        tr("name"), tr("value"), tr("type")
+    });
+
+    ui->watchView->header()->setStretchLastSection(true);
+    ui->watchView->setModel(new QStandardItemModel(this));
+    static_cast<QStandardItemModel*>(ui->watchView->model())->setHorizontalHeaderLabels({
+        tr("Expression"), tr("Value"), tr("Type")
     });
 
     auto g = DebugManager::instance();
-    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::setText);
-    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::show);
-    connect(g, &DebugManager::streamDebugInternal, ui->gdbOut, &QTextBrowser::append);
-    connect(g, &DebugManager::updateThreads, [this](int curr, const QList<gdb::Thread>& threads) {
-        ui->threadSelector->clear();
-        int currIdx = -1;
-        for (const auto& e: threads) {
-            ui->threadSelector->addItem(e.targetId);
-            if (curr == e.id)
-                currIdx = ui->threadSelector->count() - 1;
-        }
-        if (currIdx != -1)
-            ui->threadSelector->setCurrentIndex(currIdx);
-    });
 
-    connect(ui->treeView, &QTreeView::activated, [this](const QModelIndex& idx) {
-        auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
-        if (model) {
-            auto info = model->fileInfo(idx);
-            if (info.isFile())
-                openFile(info.absoluteFilePath());
-        }
-    });
-    connect(g, &DebugManager::updateCurrentFrame, [this](const gdb::Frame& frame) {
-        if (frame.fullpath != ui->textEdit->windowFilePath()) {
-            if (!openFile(frame.fullpath))
-                return;
-        } else {
-            ensureTreeViewVisible(frame.fullpath);
-        }
-        int line = frame.line - 1;
-        ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
-        ui->textEdit->markerAdd(line, QsciScintilla::SC_MARK_BACKGROUND);
-        ui->textEdit->ensureLineVisible(line);
-    });
-    connect(ed, &QsciScintilla::marginClicked, [this](int margin, int line, Qt::KeyboardModifiers) {
-        if (margin == 1)
-            toggleBreakpointAt(ui->textEdit->windowFilePath(), line+1);
-    });
-    connect(g, &DebugManager::breakpointInserted, [this](const gdb::Breakpoint& bp) {
-        if (bp.fullname == ui->textEdit->windowFilePath())
-            ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
-    });
-    connect(g, &DebugManager::breakpointRemoved, [this](const gdb::Breakpoint& bp) {
-        if (bp.fullname == ui->textEdit->windowFilePath())
-            ui->textEdit->markerDelete(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
-    });
-    connect(g, &DebugManager::updateLocalVariables, [this](const QList<gdb::Variable>& locals) {
-        auto model = new QStandardItemModel(this);
-        model->setHorizontalHeaderLabels({ tr("name"), tr("value"), tr("type") });
-        if (ui->contextFrameView->model())
-            ui->contextFrameView->model()->deleteLater();
-        ui->contextFrameView->setModel(model);
-        for (const auto& e: locals) {
-            model->appendRow({
-                new QStandardItem{e.name},
-                new QStandardItem{e.value},
-                new QStandardItem{e.type},
-            });
-        }
-        ui->contextFrameView->resizeColumnToContents(0);
-
-    });
-    connect(g, &DebugManager::updateStackFrame, [this](const QList<gdb::Frame>& stackTrace) {
-        auto model = new QStandardItemModel(this);
-        model->setHorizontalHeaderLabels({ tr("Level"), tr("Function"), tr("File"), tr("Line") });
-        if (ui->stackTraceView->model())
-            ui->stackTraceView->model()->deleteLater();
-        ui->stackTraceView->setModel(model);
-        for (const auto& frame: stackTrace) {
-            QStandardItem *first;
-            model->appendRow({
-                first = new QStandardItem{QString("%1").arg(frame.level)},
-                new QStandardItem{frame.func.isEmpty()? QString{"0x%1"}.arg(frame.addr, '0', 16) : frame.func},
-                new QStandardItem{frame.file},
-                new QStandardItem{QString("%1").arg(frame.line)},
-                });
-            first->setData(QVariant::fromValue(frame));
-        }
-        for (int i = 0; i<ui->stackTraceView->horizontalHeader()->count() - 1; i++)
-            ui->stackTraceView->resizeColumnToContents(i);
-        ui->stackTraceView->resizeRowsToContents();
-    });
-    connect(g, &DebugManager::asyncRunning, [this](const QString& thid) {
-        Q_UNUSED(thid)
-        ui->buttonRun->setIcon(QIcon{":/images/debug-pause-v2.svg"});
-    });
-    connect(g, &DebugManager::asyncStopped, [this](const QString& reason, const gdb::Frame& frame, const QString& thid, int core) {
-        Q_UNUSED(thid)
-        Q_UNUSED(core)
-        Q_UNUSED(frame)
-        if (reason == "exited-normally") {
-            DebugManager::instance()->quit();
-        } else {
-            ui->buttonRun->setIcon(QIcon{":/images/debug-run-v2.svg"});
-            triggerUpdateContext();
-            DebugManager::instance()->traceUpdateAll();
-        }
-    });
+    connect(ui->buttonAbout, &QToolButton::clicked, []() { DialogAbout().exec(); });
     connect(ui->buttonRun, &QToolButton::clicked, this, &Widget::toggleRunStop);
     connect(ui->buttonDebugStart, &QToolButton::clicked, this, &Widget::startDebuggin);
-    connect(g, &DebugManager::started, this, &Widget::updateSourceFiles);
-    connect(g, &DebugManager::started, this, &Widget::enableGuiItems);
-    connect(g, &DebugManager::terminated, this, &Widget::disableGuiItems);
     connect(ui->buttonQuit, &QToolButton::clicked, g, &DebugManager::quit);
     connect(ui->buttonNext, &QToolButton::clicked, g, &DebugManager::commandNext);
     connect(ui->buttonNextInto, &QToolButton::clicked, g, &DebugManager::commandStep);
     connect(ui->buttonFinish, &QToolButton::clicked, g, &DebugManager::commandFinish);
-    connect(ui->stackTraceView, &QTableView::doubleClicked, [this](const QModelIndex& idx) {
-        auto m = qobject_cast<QStandardItemModel*>(ui->stackTraceView->model());
-        if (m) {
-            auto item = m->item(idx.row(), 0);
-            if (item) {
-                auto frame = item->data().value<gdb::Frame>();
-                DebugManager::instance()->commandAndResponse(
-                    QString{"-stack-select-frame %1"}.arg(frame.level),
-                    [this](const QVariant&) { triggerUpdateContext(); });
-            } else
-                qDebug() << "not item for model" << idx;
-        } else
-            qDebug() << "not model for stack trace view";
-    });
-    connect(ui->buttonAbout, &QToolButton::clicked, []() { DialogAbout().exec(); });
     connect(ui->buttonAppQuit, &QToolButton::clicked, this, &Widget::close);
+    connect(ui->commadLine, &QLineEdit::returnPressed, this, &Widget::executeGdbCommand);
+    connect(ui->treeView, &QTreeView::activated, this, &Widget::fileViewActivate);
+    connect(ui->stackTraceView, &QTableView::doubleClicked, this, &Widget::stackTraceClicked);
+    connect(ui->textEdit, &QsciScintilla::marginClicked, this, &Widget::editorMarginClicked);
+    connect(ui->buttonWatchAdd, &QToolButton::clicked, this, &Widget::buttonAddWatchClicked);
+    connect(ui->buttonWatchDel, &QToolButton::clicked, this, &Widget::buttonDelWatchClicked);
+    connect(ui->buttonWatchClear, &QToolButton::clicked, this, &Widget::buttonClrWatchClicked);
 
-    auto watchModel = new QStandardItemModel(this);
-    watchModel->setHorizontalHeaderLabels({ tr("Expression"), tr("Value"), tr("Type") });
-    ui->watchView->header()->setStretchLastSection(true);
-    ui->watchView->setModel(watchModel);
-    connect(ui->buttonWatchAdd, &QToolButton::clicked, [this]() {
-        DialogNewWatch d(ui->textEdit->selectedText(), this);
-        if (d.exec())
-            DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
-    });
-    connect(ui->buttonWatchDel, &QToolButton::clicked, [this, watchModel]() {
-        for (const auto i: ui->watchView->selectionModel()->selectedRows(0)) {
-            auto item = watchModel->itemFromIndex(i);
-            if (item)
-                DebugManager::instance()->traceDelVariable(item->text());
-        }
-    });
-    connect(ui->buttonWatchClear, &QToolButton::clicked, [this, watchModel]() {
-        auto g = DebugManager::instance();
-        for (int row=0; row<watchModel->rowCount(); row++) {
-            auto item = watchModel->item(row, 0);
-            if (item)
-                g->traceDelVariable(item->text());
-        }
-    });
-    connect(g, &DebugManager::variableCreated, [this, watchModel](const gdb::Variable& var) {
-        watchModel->appendRow({
-            new QStandardItem{var.name},
-            new QStandardItem{var.value},
-            new QStandardItem{var.type}
-        });
-        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
-    });
-    connect(g, &DebugManager::variableDeleted, [this, watchModel](const gdb::Variable& var) {
-        bool removeMore = true;
-        while (removeMore) {
-            auto items = watchModel->findItems(var.name);
-            removeMore = !items.empty();
-            if (removeMore)
-                watchModel->removeRow(items.first()->row());
-        }
-        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
-    });
-    connect(g, &DebugManager::variablesChanged, [this, watchModel](const QStringList& changes) {
-        QList<int> rowsChanged;
-        for (const auto& e: changes)
-            for (const auto& k: watchModel->findItems(e))
-                rowsChanged += k->row();
-        auto g = DebugManager::instance();
-        for (const auto& row: rowsChanged) {
-            auto name = watchModel->item(row, 0)->text();
-            auto item = watchModel->item(row, 1);
-            auto var = g->vatchVars().value(name);
-            item->setText(var.value);
-        }
-        ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
-    });
+    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::setText);
+    connect(g, &DebugManager::gdbError, msgLabel, &QLabel::show);
+    connect(g, &DebugManager::streamDebugInternal, ui->gdbOut, &QTextBrowser::append);
+    connect(g, &DebugManager::updateThreads, this, &Widget::debugUpdateThreads);
+    connect(g, &DebugManager::updateCurrentFrame, this, &Widget::debugUpdateCurrentFrame);
+    connect(g, &DebugManager::updateLocalVariables, this, &Widget::debugUpdateLocalVariables);
+    connect(g, &DebugManager::updateStackFrame, this, &Widget::debugUpdateStackFrame);
+    connect(g, &DebugManager::asyncRunning, this, &Widget::debugAsyncRunning);
+    connect(g, &DebugManager::asyncStopped, this, &Widget::debugAsyncStopped);
+    connect(g, &DebugManager::started, this, &Widget::updateSourceFiles);
+    connect(g, &DebugManager::started, this, &Widget::enableGuiItems);
+    connect(g, &DebugManager::terminated, this, &Widget::disableGuiItems);
+    connect(g, &DebugManager::breakpointInserted, this, &Widget::debugBreakInserted);
+    connect(g, &DebugManager::breakpointRemoved, this, &Widget::debugBreakRemoved);
+    connect(g, &DebugManager::variableCreated, this, &Widget::debugVariableCreated);
+    connect(g, &DebugManager::variableDeleted, this, &Widget::debugVariableRemoved);
+    connect(g, &DebugManager::variablesChanged, this, &Widget::debugVariablesUpdate);
 
     disableGuiItems();
 }
@@ -360,6 +248,11 @@ void Widget::closeEvent(QCloseEvent *e)
 
 }
 
+void Widget::executeGdbCommand()
+{
+    DebugManager::instance()->command(ui->commadLine->text());
+}
+
 void Widget::ensureTreeViewVisible(const QString &fullpath)
 {
     auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
@@ -379,15 +272,11 @@ void Widget::setItemsEnable(bool en)
     if (!en) {
         ui->threadSelector->clear();
         ui->textEdit->clear();
-        if (ui->contextFrameView->model())
-            ui->contextFrameView->model()->deleteLater();
-        if (ui->stackTraceView->model())
-            ui->stackTraceView->model()->deleteLater();
-        if (ui->treeView->model())
-            ui->treeView->model()->deleteLater();
-        auto wm = qobject_cast<QStandardItemModel*>(ui->watchView->model());
-        if (wm)
-            wm->clear();
+        static_cast<QStandardItemModel*>(ui->contextFrameView->model())->clear();
+        static_cast<QStandardItemModel*>(ui->contextFrameView->model())->clear();
+        static_cast<QStandardItemModel*>(ui->stackTraceView->model())->clear();
+        static_cast<QStandardItemModel*>(ui->watchView->model())->clear();
+        if (ui->treeView->model()) ui->treeView->model()->deleteLater();
         ui->gdbOut->clear();
     }
 }
@@ -407,16 +296,7 @@ void Widget::updateSourceFiles()
             }
             auto fileList = files.toList();
             auto commonRoot = find_root(fileList);
-            auto model = new QFileSystemModel(this);
-            model->setReadOnly(true);
-            model->setRootPath(commonRoot);
-            if (ui->treeView->model())
-                ui->treeView->model()->deleteLater();
-            ui->treeView->setModel(model);
-            ui->treeView->setRootIndex(model->index(commonRoot));
-            ui->treeView->setRootIsDecorated(false);
-            for (int i=1; i<model->columnCount(); i++)
-                ui->treeView->hideColumn(i);
+            new FileSystemModel(commonRoot, ui->treeView);
             DebugManager::instance()->command("-stack-info-frame");
     });
 }
@@ -452,6 +332,61 @@ void Widget::toggleBreakpointAt(const QString &file, int line)
     } else {
         g->breakRemove(bp.number);
     }
+}
+
+void Widget::buttonAddWatchClicked() {
+    DialogNewWatch d(ui->textEdit->selectedText(), this);
+    if (d.exec())
+        DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
+}
+
+void Widget::buttonDelWatchClicked()
+{
+    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    for (const auto i: ui->watchView->selectionModel()->selectedRows(0)) {
+        auto item = watchModel->itemFromIndex(i);
+        if (item)
+            DebugManager::instance()->traceDelVariable(item->text());
+    }
+}
+
+void Widget::buttonClrWatchClicked() {
+    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    auto g = DebugManager::instance();
+    for (int row=0; row<watchModel->rowCount(); row++) {
+        auto item = watchModel->item(row, 0);
+        if (item)
+            g->traceDelVariable(item->text());
+    }
+}
+
+void Widget::editorMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
+    if (margin == 1)
+        toggleBreakpointAt(ui->textEdit->windowFilePath(), line+1);
+}
+
+void Widget::fileViewActivate(const QModelIndex &idx) {
+    auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
+    if (model) {
+        auto info = model->fileInfo(idx);
+        if (info.isFile())
+            openFile(info.absoluteFilePath());
+    }
+}
+
+void Widget::stackTraceClicked(const QModelIndex &idx) {
+    auto m = qobject_cast<QStandardItemModel*>(ui->stackTraceView->model());
+    if (m) {
+        auto item = m->item(idx.row(), 0);
+        if (item) {
+            auto frame = item->data().value<gdb::Frame>();
+            DebugManager::instance()->commandAndResponse(
+                        QString{"-stack-select-frame %1"}.arg(frame.level),
+                        [this](const QVariant&) { triggerUpdateContext(); });
+        } else
+            qDebug() << "not item for model" << idx;
+    } else
+        qDebug() << "not model for stack trace view";
 }
 
 void Widget::startDebuggin()
@@ -493,4 +428,126 @@ void Widget::toggleRunStop()
         g->commandInterrupt();
     else
         g->commandContinue();
+}
+
+void Widget::debugUpdateLocalVariables(const QList<gdb::Variable> &locals) {
+    auto model = static_cast<QStandardItemModel*>(ui->contextFrameView->model());
+    model->clear();
+    for (const auto& e: locals) {
+        model->appendRow({
+                             new QStandardItem{e.name},
+                             new QStandardItem{e.value},
+                             new QStandardItem{e.type},
+                         });
+    }
+    ui->contextFrameView->resizeColumnToContents(0);
+}
+
+void Widget::debugUpdateCurrentFrame(const gdb::Frame &frame) {
+    if (frame.fullpath != ui->textEdit->windowFilePath()) {
+        if (!openFile(frame.fullpath))
+            return;
+    } else {
+        ensureTreeViewVisible(frame.fullpath);
+    }
+    int line = frame.line - 1;
+    ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
+    ui->textEdit->markerAdd(line, QsciScintilla::SC_MARK_BACKGROUND);
+    ui->textEdit->ensureLineVisible(line);
+}
+
+void Widget::debugUpdateThreads(int curr, const QList<gdb::Thread> &threads)
+{
+    ui->threadSelector->clear();
+    int currIdx = -1;
+    for (const auto& e: threads) {
+        ui->threadSelector->addItem(e.targetId);
+        if (curr == e.id)
+            currIdx = ui->threadSelector->count() - 1;
+    }
+    if (currIdx != -1)
+        ui->threadSelector->setCurrentIndex(currIdx);
+}
+
+void Widget::debugUpdateStackFrame(const QList<gdb::Frame> &stackTrace)
+{
+    auto model = static_cast<QStandardItemModel*>(ui->stackTraceView->model());
+    model->clear();
+    for (const auto& frame: stackTrace) {
+        QStandardItem *first;
+        model->appendRow({
+            first = new QStandardItem{QString("%1").arg(frame.level)},
+            new QStandardItem{frame.func.isEmpty()? QString{"0x%1"}.arg(frame.addr, '0', 16) : frame.func},
+            new QStandardItem{frame.file},
+            new QStandardItem{QString("%1").arg(frame.line)},
+            });
+        first->setData(QVariant::fromValue(frame));
+    }
+    for (int i = 0; i<ui->stackTraceView->horizontalHeader()->count() - 1; i++)
+        ui->stackTraceView->resizeColumnToContents(i);
+    ui->stackTraceView->resizeRowsToContents();
+}
+
+void Widget::debugAsyncStopped(const gdb::AsyncContext& ctx)
+{
+    if (ctx.reason == gdb::AsyncContext::Reason::exitedNormally) {
+        DebugManager::instance()->quit();
+    } else {
+        ui->buttonRun->setIcon(QIcon{":/images/debug-run-v2.svg"});
+        triggerUpdateContext();
+        DebugManager::instance()->traceUpdateAll();
+    }
+}
+
+void Widget::debugAsyncRunning()
+{
+    ui->buttonRun->setIcon(QIcon{":/images/debug-pause-v2.svg"});
+}
+
+void Widget::debugBreakInserted(const gdb::Breakpoint &bp) {
+    if (bp.fullname == ui->textEdit->windowFilePath())
+        ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
+}
+
+void Widget::debugBreakRemoved(const gdb::Breakpoint &bp) {
+    if (bp.fullname == ui->textEdit->windowFilePath())
+        ui->textEdit->markerDelete(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
+}
+
+void Widget::debugVariableCreated(const gdb::Variable &var) {
+    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    watchModel->appendRow({
+                              new QStandardItem{var.name},
+                              new QStandardItem{var.value},
+                              new QStandardItem{var.type}
+                          });
+    ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
+}
+
+void Widget::debugVariableRemoved(const gdb::Variable &var) {
+    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    bool removeMore = true;
+    while (removeMore) {
+        auto items = watchModel->findItems(var.name);
+        removeMore = !items.empty();
+        if (removeMore)
+            watchModel->removeRow(items.first()->row());
+    }
+    ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
+}
+
+void Widget::debugVariablesUpdate(const QStringList &changes) {
+    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    QList<int> rowsChanged;
+    for (const auto& e: changes)
+        for (const auto& k: watchModel->findItems(e))
+            rowsChanged += k->row();
+    auto g = DebugManager::instance();
+    for (const auto& row: rowsChanged) {
+        auto name = watchModel->item(row, 0)->text();
+        auto item = watchModel->item(row, 1);
+        auto var = g->vatchVars().value(name);
+        item->setText(var.value);
+    }
+    ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
 }

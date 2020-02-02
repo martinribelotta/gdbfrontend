@@ -23,6 +23,7 @@ protected:
     virtual void closeEvent(QCloseEvent *e);
 
 private slots:
+    void executeGdbCommand();
     void ensureTreeViewVisible(const QString& fullpath);
     void setItemsEnable(bool en);
     void enableGuiItems() { setItemsEnable(true); }
@@ -31,8 +32,30 @@ private slots:
     bool openFile(const QString& fullpath);
     void toggleBreakpointAt(const QString& file, int line);
 
+    void buttonAddWatchClicked();
+    void buttonDelWatchClicked();
+    void buttonClrWatchClicked();
+
+    void editorMarginClicked(int margin, int line, Qt::KeyboardModifiers);
+    void fileViewActivate(const QModelIndex& idx);
+    void stackTraceClicked(const QModelIndex& idx);
+
     void startDebuggin();
     void triggerUpdateContext();
     void toggleRunStop();
+
+    void debugUpdateLocalVariables(const QList<gdb::Variable>& locals);
+    void debugUpdateCurrentFrame(const gdb::Frame& frame);
+    void debugUpdateThreads(int curr, const QList<gdb::Thread>& threads);
+    void debugUpdateStackFrame(const QList<gdb::Frame>& stackTrace);
+    void debugAsyncStopped(const gdb::AsyncContext &ctx);
+    void debugAsyncRunning();
+
+    void debugBreakInserted(const gdb::Breakpoint& bp);
+    void debugBreakRemoved(const gdb::Breakpoint& bp);
+
+    void debugVariableCreated(const gdb::Variable& var);
+    void debugVariableRemoved(const gdb::Variable& var);
+    void debugVariablesUpdate(const QStringList& changes);
 };
 #endif // WIDGET_H

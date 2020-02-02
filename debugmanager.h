@@ -77,6 +77,36 @@ struct Thread {
     static Thread parseMap(const QVariantMap& data);
 };
 
+struct AsyncContext {
+    enum class Reason {
+        Unknown,
+        breakpointHhit,
+        watchpointTrigger,
+        readWatchpointTrigger,
+        accessWatchpointTrigger,
+        functionFinished,
+        locationReached,
+        watchpointScope,
+        endSteppingRange,
+        exitedSignalled,
+        exited,
+        exitedNormally,
+        signalReceived,
+        solibEvent,
+        fork,
+        vfork,
+        syscallEntry,
+        syscallReturn,
+        exec,
+    } reason;
+    QString threadId;
+    int core;
+    Frame frame;
+
+    static Reason textToReason(const QString& s);
+    static QString reasonToText(Reason r);
+};
+
 }
 
 class DebugManager : public QObject
@@ -158,7 +188,7 @@ signals:
     void gdbError(const QString& msg);
 
     void asyncRunning(const QString& thid);
-    void asyncStopped(const QString& reason, const gdb::Frame& frame, const QString& thid, int core);
+    void asyncStopped(const gdb::AsyncContext& ctx);
 
     void updateThreads(int currentId, const QList<gdb::Thread>& threads);
     void updateCurrentFrame(const gdb::Frame& frame);
@@ -194,5 +224,6 @@ Q_DECLARE_METATYPE(gdb::Variable)
 Q_DECLARE_METATYPE(gdb::Frame)
 Q_DECLARE_METATYPE(gdb::Breakpoint)
 Q_DECLARE_METATYPE(gdb::Thread)
+Q_DECLARE_METATYPE(gdb::AsyncContext)
 
 #endif // DEBUGMANAGER_H

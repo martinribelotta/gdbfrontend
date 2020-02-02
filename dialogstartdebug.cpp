@@ -8,34 +8,28 @@
 #include <QTextStream>
 #include <QProcessEnvironment>
 
+#ifdef Q_OS_WIN
+static constexpr QLatin1Char PATH_SEPARATOR{';'};
+#else
+static constexpr QLatin1Char PATH_SEPARATOR{':'};
+#endif
+
+static const QRegularExpression GDB_PATTERN_IN_PATH{R"(^([\w_\-]+\-)?gdb(\.exe)?$)"};
+
 static QStringList findPatternInPath(const QRegularExpression& re) {
     QSet<QString> fileList;
-    QLatin1Char PATH_SEPARATOR
-#ifdef Q_OS_WIN
-    {';'}
-#else
-    {':'}
-#endif
-    ;
     auto paths = QProcessEnvironment::systemEnvironment().value("PATH").split(PATH_SEPARATOR);
-    for (const auto& e: paths) {
-        for (const auto& f: QDir{e}.entryInfoList()) {
-            auto name = f.fileName();
-            auto filePath = f.absoluteFilePath();
-            if (re.match(name).hasMatch())
-                fileList += filePath;
-        }
-    }
+    for (const auto& e: paths)
+        for (const auto& f: QDir{e}.entryInfoList())
+            if (re.match(f.fileName()).hasMatch())
+                fileList += f.absoluteFilePath();
     return fileList.toList();
 }
 
 static bool processObject(QComboBox *b, const QJsonObject& j)
 {
-    auto name = j.value("name").toString();
-    b->addItem(name, j.toVariantMap());
-    if (j.value("default").toBool(false))
-        return true;
-    return false;
+    b->addItem(j.value("name").toString(), j.toVariantMap());
+    return j.value("default").toBool(false);
 }
 
 DialogStartDebug::DialogStartDebug(QWidget *parent) :
@@ -84,7 +78,7 @@ DialogStartDebug::DialogStartDebug(QWidget *parent) :
     ui->comboGdbInitTemplates->setCurrentIndex(defaultIdx);
 
     ui->editorGdbExecFile->clear();
-    ui->editorGdbExecFile->addItems(findPatternInPath(QRegularExpression{R"(^([\w_\-]+\-)?gdb(\.exe)?$)"}));
+    ui->editorGdbExecFile->addItems(findPatternInPath(GDB_PATTERN_IN_PATH));
     detectGdbFor(defaultIdx);
 
     connect(ui->buttonChoseExecutable, &QToolButton::clicked, [this]() {

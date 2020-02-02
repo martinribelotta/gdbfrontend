@@ -304,6 +304,7 @@ void registerMetatypes() {
     qRegisterMetaType<gdb::Breakpoint>();
     qRegisterMetaType<gdb::Variable>();
     qRegisterMetaType<gdb::Thread>();
+    qRegisterMetaType<gdb::AsyncContext>();
     registered = true;
 }
 }
@@ -600,12 +601,13 @@ void DebugManager::processLine(const QString &line)
         static const QMap<QString, dispatcher_t> responseDispatcher{
             { "stopped", [this](const mi::Response& r) {
                 auto data = r.payload.toMap();
-                auto reason = data.value("reason").toString();
-                auto thid = data.value("thread-id").toString();
-                auto core = data.value("core").toInt();
-                auto frame = gdb::Frame::parseMap(data.value("frame").toMap());
+                gdb::AsyncContext ctx;
+                ctx.reason = gdb::AsyncContext::textToReason(data.value("reason").toString());
+                ctx.threadId = data.value("thread-id").toString();
+                ctx.core = data.value("core").toInt();
+                ctx.frame = gdb::Frame::parseMap(data.value("frame").toMap());
                 self->m_inferiorRunning = false;
-                emit asyncStopped(reason, frame, thid, core);
+                emit asyncStopped(ctx);
              } },
              { "running", [this](const mi::Response& r) {
                  auto data = r.payload.toMap();
@@ -763,4 +765,54 @@ gdb::Thread gdb::Thread::parseMap(const QVariantMap &data)
     t.frame = Frame::parseMap(data.value("frame").toMap());
     t.core = data.value("core").toInt();
     return t;
+}
+
+gdb::AsyncContext::Reason gdb::AsyncContext::textToReason(const QString &s)
+{
+    static const QMap<QString, Reason> map{
+        { "breakpoint-hit"              ,Reason::breakpointHhit          }, // A breakpoint was reached.
+        { "watchpoint-trigger"          ,Reason::watchpointTrigger       }, // A watchpoint was triggered.
+        { "read-watchpoint-trigger"     ,Reason::readWatchpointTrigger   }, // A read watchpoint was triggered.
+        { "access-watchpoint-trigger"   ,Reason::accessWatchpointTrigger }, // An access watchpoint was triggered.
+        { "function-finished"           ,Reason::functionFinished        }, // An -exec-finish or similar CLI command was accomplished.
+        { "location-reached"            ,Reason::locationReached         }, // An -exec-until or similar CLI command was accomplished.
+        { "watchpoint-scope"            ,Reason::watchpointScope         }, // A watchpoint has gone out of scope.
+        { "end-stepping-range"          ,Reason::endSteppingRange        }, // An -exec-next, -exec-next-instruction, -exec-step, -exec-step-instruction or similar CLI command was accomplished.
+        { "exited-signalled"            ,Reason::exitedSignalled         }, // The inferior exited because of a signal.
+        { "exited"                      ,Reason::exited                  }, // The inferior exited.
+        { "exited-normally"             ,Reason::exitedNormally          }, // The inferior exited normally.
+        { "signal-received"             ,Reason::signalReceived          }, // A signal was received by the inferior.
+        { "solib-event"                 ,Reason::solibEvent              }, // The inferior has stopped due to a library being loaded or unloaded. This can happen when stop-on-solib-events (see Files) is set or when a catch load or catch unload catchpoint is in use (see Set Catchpoints).
+        { "fork"                        ,Reason::fork                    }, // The inferior has forked. This is reported when catch fork (see Set Catchpoints) has been used.
+        { "vfork"                       ,Reason::vfork                   }, // The inferior has vforked. This is reported in when catch vfork (see Set Catchpoints) has been used.
+        { "syscall-entry"               ,Reason::syscallEntry            }, // The inferior entered a system call. This is reported when catch syscall (see Set Catchpoints) has been used.
+        { "syscall-return"              ,Reason::syscallReturn           }, // The inferior returned from a system call. This is reported when catch syscall (see Set Catchpoints) has been used.
+        { "exec"                        ,Reason::exec                    }, // The inferior called exec. This is reported when catch exec (see Set Catchpoints) has been used.
+    };
+    return map.value(s, Reason::Unknown);
+}
+
+QString gdb::AsyncContext::reasonToText(gdb::AsyncContext::Reason r)
+{
+    switch (r) {
+    case Reason::breakpointHhit          : return "breakpoint-hit";
+    case Reason::watchpointTrigger       : return "watchpoint-trigger";
+    case Reason::readWatchpointTrigger   : return "read-watchpoint-trigger";
+    case Reason::accessWatchpointTrigger : return "access-watchpoint-trigger";
+    case Reason::functionFinished        : return "function-finished";
+    case Reason::locationReached         : return "location-reached";
+    case Reason::watchpointScope         : return "watchpoint-scope";
+    case Reason::endSteppingRange        : return "end-stepping-range";
+    case Reason::exitedSignalled         : return "exited-signalled";
+    case Reason::exited                  : return "exited";
+    case Reason::exitedNormally          : return "exited-normally";
+    case Reason::signalReceived          : return "signal-received";
+    case Reason::solibEvent              : return "solib-event";
+    case Reason::fork                    : return "fork";
+    case Reason::vfork                   : return "vfork";
+    case Reason::syscallEntry            : return "syscall-entry";
+    case Reason::syscallReturn           : return "syscall-return";
+    case Reason::exec                    : return "exec";
+    default: return "unknown";
+    }
 }
