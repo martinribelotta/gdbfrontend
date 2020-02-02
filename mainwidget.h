@@ -6,18 +6,18 @@
 #include "debugmanager.h"
 
 QT_BEGIN_NAMESPACE
-namespace Ui { class Widget; }
+namespace Ui { class MainWidget; }
 QT_END_NAMESPACE
 
-class Widget : public QWidget
+class MainWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    Widget(QWidget *parent = nullptr);
-    ~Widget();
+    MainWidget(QWidget *parent = nullptr);
+    ~MainWidget();
 private:
-    Ui::Widget *ui;
+    Ui::MainWidget *ui;
 
 protected:
     virtual void closeEvent(QCloseEvent *e);

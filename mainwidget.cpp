@@ -1,5 +1,5 @@
-#include "widget.h"
-#include "ui_widget.h"
+#include "mainwidget.h"
+#include "ui_mainwidget.h"
 
 #include "dialogabout.h"
 #include "dialognewwatch.h"
@@ -157,7 +157,7 @@ static void configureEditor(QsciScintilla *ed)
     ed->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 }
 
-static void configureSplitters(Ui::Widget *ui, QWidget *w)
+static void configureSplitters(Ui::MainWidget *ui, QWidget *w)
 {
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
@@ -188,9 +188,9 @@ static void configureSplitters(Ui::Widget *ui, QWidget *w)
 #undef _tr
 }
 
-Widget::Widget(QWidget *parent)
+MainWidget::MainWidget(QWidget *parent)
     : QWidget(parent)
-    , ui(new Ui::Widget)
+    , ui(new Ui::MainWidget)
 {
     ui->setupUi(this);
     configureEditor(ui->textEdit);
@@ -199,66 +199,66 @@ Widget::Widget(QWidget *parent)
     auto g = DebugManager::instance();
 
     connect(ui->buttonAbout, &QToolButton::clicked, []() { DialogAbout().exec(); });
-    connect(ui->buttonRun, &QToolButton::clicked, this, &Widget::toggleRunStop);
-    connect(ui->buttonDebugStart, &QToolButton::clicked, this, &Widget::startDebuggin);
+    connect(ui->buttonRun, &QToolButton::clicked, this, &MainWidget::toggleRunStop);
+    connect(ui->buttonDebugStart, &QToolButton::clicked, this, &MainWidget::startDebuggin);
     connect(ui->buttonQuit, &QToolButton::clicked, g, &DebugManager::quit);
     connect(ui->buttonNext, &QToolButton::clicked, g, &DebugManager::commandNext);
     connect(ui->buttonNextInto, &QToolButton::clicked, g, &DebugManager::commandStep);
     connect(ui->buttonFinish, &QToolButton::clicked, g, &DebugManager::commandFinish);
-    connect(ui->buttonAppQuit, &QToolButton::clicked, this, &Widget::close);
-    connect(ui->commadLine, &QLineEdit::returnPressed, this, &Widget::executeGdbCommand);
-    connect(ui->treeView, &QTreeView::activated, this, &Widget::fileViewActivate);
-    connect(ui->stackTraceView, &QTableView::doubleClicked, this, &Widget::stackTraceClicked);
-    connect(ui->textEdit, &QsciScintilla::marginClicked, this, &Widget::editorMarginClicked);
-    connect(ui->buttonWatchAdd, &QToolButton::clicked, this, &Widget::buttonAddWatchClicked);
-    connect(ui->buttonWatchDel, &QToolButton::clicked, this, &Widget::buttonDelWatchClicked);
-    connect(ui->buttonWatchClear, &QToolButton::clicked, this, &Widget::buttonClrWatchClicked);
+    connect(ui->buttonAppQuit, &QToolButton::clicked, this, &MainWidget::close);
+    connect(ui->commadLine, &QLineEdit::returnPressed, this, &MainWidget::executeGdbCommand);
+    connect(ui->treeView, &QTreeView::activated, this, &MainWidget::fileViewActivate);
+    connect(ui->stackTraceView, &QTableView::doubleClicked, this, &MainWidget::stackTraceClicked);
+    connect(ui->textEdit, &QsciScintilla::marginClicked, this, &MainWidget::editorMarginClicked);
+    connect(ui->buttonWatchAdd, &QToolButton::clicked, this, &MainWidget::buttonAddWatchClicked);
+    connect(ui->buttonWatchDel, &QToolButton::clicked, this, &MainWidget::buttonDelWatchClicked);
+    connect(ui->buttonWatchClear, &QToolButton::clicked, this, &MainWidget::buttonClrWatchClicked);
 
     auto msgLabel = createMessageLabel(ui->textEdit);
 
     connect(g, &DebugManager::gdbError, msgLabel, &QLabel::setText);
     connect(g, &DebugManager::gdbError, msgLabel, &QLabel::show);
     connect(g, &DebugManager::streamDebugInternal, ui->gdbOut, &QTextBrowser::append);
-    connect(g, &DebugManager::updateThreads, this, &Widget::debugUpdateThreads);
-    connect(g, &DebugManager::updateCurrentFrame, this, &Widget::debugUpdateCurrentFrame);
-    connect(g, &DebugManager::updateLocalVariables, this, &Widget::debugUpdateLocalVariables);
-    connect(g, &DebugManager::updateStackFrame, this, &Widget::debugUpdateStackFrame);
-    connect(g, &DebugManager::asyncRunning, this, &Widget::debugAsyncRunning);
-    connect(g, &DebugManager::asyncStopped, this, &Widget::debugAsyncStopped);
-    connect(g, &DebugManager::started, this, &Widget::updateSourceFiles);
-    connect(g, &DebugManager::started, this, &Widget::enableGuiItems);
-    connect(g, &DebugManager::terminated, this, &Widget::disableGuiItems);
-    connect(g, &DebugManager::breakpointInserted, this, &Widget::debugBreakInserted);
-    connect(g, &DebugManager::breakpointRemoved, this, &Widget::debugBreakRemoved);
-    connect(g, &DebugManager::variableCreated, this, &Widget::debugVariableCreated);
-    connect(g, &DebugManager::variableDeleted, this, &Widget::debugVariableRemoved);
-    connect(g, &DebugManager::variablesChanged, this, &Widget::debugVariablesUpdate);
+    connect(g, &DebugManager::updateThreads, this, &MainWidget::debugUpdateThreads);
+    connect(g, &DebugManager::updateCurrentFrame, this, &MainWidget::debugUpdateCurrentFrame);
+    connect(g, &DebugManager::updateLocalVariables, this, &MainWidget::debugUpdateLocalVariables);
+    connect(g, &DebugManager::updateStackFrame, this, &MainWidget::debugUpdateStackFrame);
+    connect(g, &DebugManager::asyncRunning, this, &MainWidget::debugAsyncRunning);
+    connect(g, &DebugManager::asyncStopped, this, &MainWidget::debugAsyncStopped);
+    connect(g, &DebugManager::started, this, &MainWidget::updateSourceFiles);
+    connect(g, &DebugManager::started, this, &MainWidget::enableGuiItems);
+    connect(g, &DebugManager::terminated, this, &MainWidget::disableGuiItems);
+    connect(g, &DebugManager::breakpointInserted, this, &MainWidget::debugBreakInserted);
+    connect(g, &DebugManager::breakpointRemoved, this, &MainWidget::debugBreakRemoved);
+    connect(g, &DebugManager::variableCreated, this, &MainWidget::debugVariableCreated);
+    connect(g, &DebugManager::variableDeleted, this, &MainWidget::debugVariableRemoved);
+    connect(g, &DebugManager::variablesChanged, this, &MainWidget::debugVariablesUpdate);
 
     disableGuiItems();
 }
 
-Widget::~Widget()
+MainWidget::~MainWidget()
 {
     delete ui;
 }
 
-void Widget::closeEvent(QCloseEvent *e)
+void MainWidget::closeEvent(QCloseEvent *e)
 {
     auto g = DebugManager::instance();
     if (g->isGdbExecuting()) {
-        weakConnect(g, &DebugManager::gdbProcessTerminated, this, &Widget::close);
+        weakConnect(g, &DebugManager::gdbProcessTerminated, this, &MainWidget::close);
         g->quit();
         e->ignore();
     } else
         e->accept();
 }
 
-void Widget::executeGdbCommand()
+void MainWidget::executeGdbCommand()
 {
     DebugManager::instance()->command(ui->commadLine->text());
 }
 
-void Widget::ensureTreeViewVisible(const QString &fullpath)
+void MainWidget::ensureTreeViewVisible(const QString &fullpath)
 {
     auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
     if (model) {
@@ -268,7 +268,7 @@ void Widget::ensureTreeViewVisible(const QString &fullpath)
     }
 }
 
-void Widget::setItemsEnable(bool en)
+void MainWidget::setItemsEnable(bool en)
 {
     for (auto& b: ui->buttonGroup->buttons())
         b->setEnabled(en);
@@ -286,7 +286,7 @@ void Widget::setItemsEnable(bool en)
     }
 }
 
-void Widget::updateSourceFiles()
+void MainWidget::updateSourceFiles()
 {
     DebugManager::instance()->commandAndResponse(
         "-file-list-exec-source-files", [this](const QVariant& res) {
@@ -306,7 +306,7 @@ void Widget::updateSourceFiles()
     });
 }
 
-bool Widget::openFile(const QString &fullpath)
+bool MainWidget::openFile(const QString &fullpath)
 {
     QFile f{fullpath};
     if (!f.open(QFile::ReadOnly)) {
@@ -327,7 +327,7 @@ bool Widget::openFile(const QString &fullpath)
     return true;
 }
 
-void Widget::toggleBreakpointAt(const QString &file, int line)
+void MainWidget::toggleBreakpointAt(const QString &file, int line)
 {
     auto g = DebugManager::instance();
     auto bp = g->breakpointByFileLine(file, line);
@@ -339,13 +339,13 @@ void Widget::toggleBreakpointAt(const QString &file, int line)
     }
 }
 
-void Widget::buttonAddWatchClicked() {
+void MainWidget::buttonAddWatchClicked() {
     DialogNewWatch d(ui->textEdit->selectedText(), this);
     if (d.exec())
         DebugManager::instance()->traceAddVariable(d.watchExpr(), d.watchName());
 }
 
-void Widget::buttonDelWatchClicked()
+void MainWidget::buttonDelWatchClicked()
 {
     auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
     for (const auto i: ui->watchView->selectionModel()->selectedRows(0)) {
@@ -355,7 +355,7 @@ void Widget::buttonDelWatchClicked()
     }
 }
 
-void Widget::buttonClrWatchClicked() {
+void MainWidget::buttonClrWatchClicked() {
     auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
     auto g = DebugManager::instance();
     for (int row=0; row<watchModel->rowCount(); row++) {
@@ -365,12 +365,12 @@ void Widget::buttonClrWatchClicked() {
     }
 }
 
-void Widget::editorMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
+void MainWidget::editorMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
     if (margin == 1)
         toggleBreakpointAt(ui->textEdit->windowFilePath(), line+1);
 }
 
-void Widget::fileViewActivate(const QModelIndex &idx) {
+void MainWidget::fileViewActivate(const QModelIndex &idx) {
     auto model = qobject_cast<QFileSystemModel*>(ui->treeView->model());
     if (model) {
         auto info = model->fileInfo(idx);
@@ -379,7 +379,7 @@ void Widget::fileViewActivate(const QModelIndex &idx) {
     }
 }
 
-void Widget::stackTraceClicked(const QModelIndex &idx) {
+void MainWidget::stackTraceClicked(const QModelIndex &idx) {
     auto m = qobject_cast<QStandardItemModel*>(ui->stackTraceView->model());
     if (m) {
         auto item = m->item(idx.row(), 0);
@@ -394,7 +394,7 @@ void Widget::stackTraceClicked(const QModelIndex &idx) {
         qDebug() << "not model for stack trace view";
 }
 
-void Widget::startDebuggin()
+void MainWidget::startDebuggin()
 {
     DialogStartDebug d{this};
     if (d.exec() == QDialog::Accepted) {
@@ -417,7 +417,7 @@ void Widget::startDebuggin()
     }
 }
 
-void Widget::triggerUpdateContext()
+void MainWidget::triggerUpdateContext()
 {
     auto g = DebugManager::instance();
     g->command("-stack-info-frame");
@@ -426,7 +426,7 @@ void Widget::triggerUpdateContext()
     g->command("-stack-list-variables --simple-values");
 }
 
-void Widget::toggleRunStop()
+void MainWidget::toggleRunStop()
 {
     auto g = DebugManager::instance();
     if (g->isInferiorRunning())
@@ -435,7 +435,7 @@ void Widget::toggleRunStop()
         g->commandContinue();
 }
 
-void Widget::debugUpdateLocalVariables(const QList<gdb::Variable> &locals) {
+void MainWidget::debugUpdateLocalVariables(const QList<gdb::Variable> &locals) {
     auto model = static_cast<QStandardItemModel*>(ui->contextFrameView->model());
     model->clear();
     for (const auto& e: locals) {
@@ -448,7 +448,7 @@ void Widget::debugUpdateLocalVariables(const QList<gdb::Variable> &locals) {
     ui->contextFrameView->resizeColumnToContents(0);
 }
 
-void Widget::debugUpdateCurrentFrame(const gdb::Frame &frame) {
+void MainWidget::debugUpdateCurrentFrame(const gdb::Frame &frame) {
     if (frame.fullpath != ui->textEdit->windowFilePath()) {
         if (!openFile(frame.fullpath))
             return;
@@ -461,7 +461,7 @@ void Widget::debugUpdateCurrentFrame(const gdb::Frame &frame) {
     ui->textEdit->ensureLineVisible(line);
 }
 
-void Widget::debugUpdateThreads(int curr, const QList<gdb::Thread> &threads)
+void MainWidget::debugUpdateThreads(int curr, const QList<gdb::Thread> &threads)
 {
     ui->threadSelector->clear();
     int currIdx = -1;
@@ -474,7 +474,7 @@ void Widget::debugUpdateThreads(int curr, const QList<gdb::Thread> &threads)
         ui->threadSelector->setCurrentIndex(currIdx);
 }
 
-void Widget::debugUpdateStackFrame(const QList<gdb::Frame> &stackTrace)
+void MainWidget::debugUpdateStackFrame(const QList<gdb::Frame> &stackTrace)
 {
     auto model = static_cast<QStandardItemModel*>(ui->stackTraceView->model());
     model->clear();
@@ -493,7 +493,7 @@ void Widget::debugUpdateStackFrame(const QList<gdb::Frame> &stackTrace)
     ui->stackTraceView->resizeRowsToContents();
 }
 
-void Widget::debugAsyncStopped(const gdb::AsyncContext& ctx)
+void MainWidget::debugAsyncStopped(const gdb::AsyncContext& ctx)
 {
     if (ctx.reason == gdb::AsyncContext::Reason::exitedNormally) {
         DebugManager::instance()->quit();
@@ -504,22 +504,22 @@ void Widget::debugAsyncStopped(const gdb::AsyncContext& ctx)
     }
 }
 
-void Widget::debugAsyncRunning()
+void MainWidget::debugAsyncRunning()
 {
     ui->buttonRun->setIcon(QIcon{":/images/debug-pause-v2.svg"});
 }
 
-void Widget::debugBreakInserted(const gdb::Breakpoint &bp) {
+void MainWidget::debugBreakInserted(const gdb::Breakpoint &bp) {
     if (bp.fullname == ui->textEdit->windowFilePath())
         ui->textEdit->markerAdd(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
 }
 
-void Widget::debugBreakRemoved(const gdb::Breakpoint &bp) {
+void MainWidget::debugBreakRemoved(const gdb::Breakpoint &bp) {
     if (bp.fullname == ui->textEdit->windowFilePath())
         ui->textEdit->markerDelete(bp.line - 1, QsciScintilla::SC_MARK_CIRCLE);
 }
 
-void Widget::debugVariableCreated(const gdb::Variable &var) {
+void MainWidget::debugVariableCreated(const gdb::Variable &var) {
     static_cast<QStandardItemModel*>(ui->watchView->model())->appendRow({
         new QStandardItem{var.name},
         new QStandardItem{var.value},
@@ -528,7 +528,7 @@ void Widget::debugVariableCreated(const gdb::Variable &var) {
     ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
 }
 
-void Widget::debugVariableRemoved(const gdb::Variable &var) {
+void MainWidget::debugVariableRemoved(const gdb::Variable &var) {
     auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
     bool removeMore = true;
     while (removeMore) {
@@ -540,7 +540,7 @@ void Widget::debugVariableRemoved(const gdb::Variable &var) {
     ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
 }
 
-void Widget::debugVariablesUpdate(const QStringList &changes) {
+void MainWidget::debugVariablesUpdate(const QStringList &changes) {
     auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
     QList<int> rowsChanged;
     for (const auto& e: changes)

@@ -1,5 +1,5 @@
 #include "debugmanager.h"
-#include "widget.h"
+#include "mainwidget.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     if (parser.isSet("start"))
         QTimer::singleShot(0, g, &DebugManager::execute);
 
-    Widget w;
+    MainWidget w;
     w.show();
     return a.exec();
 }
