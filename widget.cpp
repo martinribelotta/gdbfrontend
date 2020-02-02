@@ -104,12 +104,23 @@ public:
         view->setModel(this);
         view->setRootIsDecorated(false);
         view->setRootIndex(index(root));
+        view->header()->hide();
         for (int i=1; i<columnCount(); i++)
             view->hideColumn(i);
     }
 
     virtual ~FileSystemModel() {
         view->setModel(nullptr);
+    }
+};
+
+class StdItemModel: public QStandardItemModel
+{
+public:
+    StdItemModel(const QStringList& labels, QObject *parent = nullptr) :
+        QStandardItemModel(parent)
+    {
+        setHorizontalHeaderLabels(labels);
     }
 };
 
@@ -131,30 +142,22 @@ Widget::Widget(QWidget *parent)
 {
     ui->setupUi(this);
 
-    auto msgLabel = createMessageLabel(ui->textEdit);
     ui->textEdit->setReadOnly(true);
-
     ui->textEdit->setCaretForegroundColor(conf::editor::CARET_FG);
     ui->textEdit->setCaretLineVisible(true);
     ui->textEdit->setCaretLineBackgroundColor(conf::editor::CARET_BG);
     ui->textEdit->setCaretWidth(2);
-
     ui->textEdit->setMarginType(0, QsciScintilla::NumberMargin);
     ui->textEdit->setMarginsForegroundColor(conf::editor::MARGIN_FG);
-
     ui->textEdit->setMarginType(1, QsciScintilla::SymbolMargin);
     ui->textEdit->setMarginWidth(1, "00000");
     ui->textEdit->setMarginMarkerMask(1, 0x3);
     ui->textEdit->setMarginSensitivity(1, true);
-
     ui->textEdit->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
     ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
-
     ui->textEdit->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
     ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
-
     ui->textEdit->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
-
     ui->textEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     ui->splitterOuter->setStretchFactor(0, 0);
@@ -174,23 +177,14 @@ Widget::Widget(QWidget *parent)
 
     ui->stackTraceView->verticalHeader()->hide();
     ui->stackTraceView->horizontalHeader()->setStretchLastSection(true);
-    ui->stackTraceView->setModel(new QStandardItemModel(this));
-    static_cast<QStandardItemModel*>(ui->stackTraceView->model())->setHorizontalHeaderLabels({
-        tr("Level"), tr("Function"), tr("File"), tr("Line")
-    });
+    ui->stackTraceView->setModel(new StdItemModel({tr("Level"), tr("Function"), tr("File"), tr("Line")}, this));
 
     ui->contextFrameView->verticalHeader()->hide();
     ui->contextFrameView->horizontalHeader()->setStretchLastSection(true);
-    ui->contextFrameView->setModel(new QStandardItemModel(this));
-    static_cast<QStandardItemModel*>(ui->contextFrameView->model())->setHorizontalHeaderLabels({
-        tr("name"), tr("value"), tr("type")
-    });
+    ui->contextFrameView->setModel(new StdItemModel({tr("name"), tr("value"), tr("type")}, this));
 
     ui->watchView->header()->setStretchLastSection(true);
-    ui->watchView->setModel(new QStandardItemModel(this));
-    static_cast<QStandardItemModel*>(ui->watchView->model())->setHorizontalHeaderLabels({
-        tr("Expression"), tr("Value"), tr("Type")
-    });
+    ui->watchView->setModel(new StdItemModel({tr("Expression"), tr("Value"), tr("Type")}, this));
 
     auto g = DebugManager::instance();
 
@@ -209,6 +203,8 @@ Widget::Widget(QWidget *parent)
     connect(ui->buttonWatchAdd, &QToolButton::clicked, this, &Widget::buttonAddWatchClicked);
     connect(ui->buttonWatchDel, &QToolButton::clicked, this, &Widget::buttonDelWatchClicked);
     connect(ui->buttonWatchClear, &QToolButton::clicked, this, &Widget::buttonClrWatchClicked);
+
+    auto msgLabel = createMessageLabel(ui->textEdit);
 
     connect(g, &DebugManager::gdbError, msgLabel, &QLabel::setText);
     connect(g, &DebugManager::gdbError, msgLabel, &QLabel::show);
@@ -245,7 +241,6 @@ void Widget::closeEvent(QCloseEvent *e)
         e->ignore();
     } else
         e->accept();
-
 }
 
 void Widget::executeGdbCommand()
