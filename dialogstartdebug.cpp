@@ -32,6 +32,16 @@ static bool processObject(QComboBox *b, const QJsonObject& j)
     return j.value("default").toBool(false);
 }
 
+static QFileInfoList glob(const QString& path, const QString& g)
+{
+    return QDir(path).entryInfoList({g});
+}
+
+static QFileInfoList appGlob(const QString& path, const QString& g)
+{
+    return glob(QApplication::applicationDirPath() + path, g);
+}
+
 DialogStartDebug::DialogStartDebug(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::DialogStartDebug)
@@ -39,10 +49,9 @@ DialogStartDebug::DialogStartDebug(QWidget *parent) :
     m_needWriteInitScript = true;
     ui->setupUi(this);
 
-    auto templateList =
-        QDir{":/gdbinit"}.entryInfoList({"*.json"}) +
-        QDir{QApplication::applicationDirPath() + "/../share/gdbfront/"}.entryInfoList({"gdbinit*.json"}) +
-        QDir{QApplication::applicationDirPath() + "/gdbfront/"}.entryInfoList({"gdbinit*.json"});
+    auto templateList = glob(":/gdbinit", "*.json") +
+                        appGlob("/../share/gdbfront/", "gdbinit*.json") +
+                        appGlob("/gdbfront/", "gdbinit*.json");
     int defaultIdx = 0;
     for (const auto& e: templateList) {
         QFile f{e.absoluteFilePath()};
