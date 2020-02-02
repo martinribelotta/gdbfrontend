@@ -11,9 +11,8 @@ DialogAbout::DialogAbout(QWidget *parent) :
 {
     ui->setupUi(this);
     QFile gplLicenceFile(":/licences/gpl-3.0.txt");
-    gplLicenceFile.open(QFile::ReadOnly);
-    QTextStream ss(&gplLicenceFile);
-    ui->textBrowser->setPlainText(ss.readAll());
+    if (gplLicenceFile.open(QFile::ReadOnly))
+        ui->textBrowser->setPlainText(QTextStream(&gplLicenceFile).readAll());
 }
 
 DialogAbout::~DialogAbout()

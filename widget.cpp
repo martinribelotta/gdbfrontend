@@ -136,30 +136,29 @@ static QLabel *createMessageLabel(QWidget *w)
     return msgLabel;
 }
 
-Widget::Widget(QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::Widget)
+static void configureEditor(QsciScintilla *ed)
 {
-    ui->setupUi(this);
+    ed->setReadOnly(true);
+    ed->setCaretForegroundColor(conf::editor::CARET_FG);
+    ed->setCaretLineVisible(true);
+    ed->setCaretLineBackgroundColor(conf::editor::CARET_BG);
+    ed->setCaretWidth(2);
+    ed->setMarginType(0, QsciScintilla::NumberMargin);
+    ed->setMarginsForegroundColor(conf::editor::MARGIN_FG);
+    ed->setMarginType(1, QsciScintilla::SymbolMargin);
+    ed->setMarginWidth(1, "00000");
+    ed->setMarginMarkerMask(1, 0x3);
+    ed->setMarginSensitivity(1, true);
+    ed->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
+    ed->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
+    ed->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
+    ed->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
+    ed->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
+    ed->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+}
 
-    ui->textEdit->setReadOnly(true);
-    ui->textEdit->setCaretForegroundColor(conf::editor::CARET_FG);
-    ui->textEdit->setCaretLineVisible(true);
-    ui->textEdit->setCaretLineBackgroundColor(conf::editor::CARET_BG);
-    ui->textEdit->setCaretWidth(2);
-    ui->textEdit->setMarginType(0, QsciScintilla::NumberMargin);
-    ui->textEdit->setMarginsForegroundColor(conf::editor::MARGIN_FG);
-    ui->textEdit->setMarginType(1, QsciScintilla::SymbolMargin);
-    ui->textEdit->setMarginWidth(1, "00000");
-    ui->textEdit->setMarginMarkerMask(1, 0x3);
-    ui->textEdit->setMarginSensitivity(1, true);
-    ui->textEdit->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
-    ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_CIRCLE_BG, QsciScintilla::SC_MARK_CIRCLE);
-    ui->textEdit->markerDefine(QsciScintilla::Background, QsciScintilla::SC_MARK_BACKGROUND);
-    ui->textEdit->setMarkerBackgroundColor(conf::editor::MARKER_LINE_BG, QsciScintilla::SC_MARK_BACKGROUND);
-    ui->textEdit->setAnnotationDisplay(QsciScintilla::AnnotationIndented);
-    ui->textEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-
+static void configureSplitters(Ui::Widget *ui)
+{
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
 
@@ -185,6 +184,15 @@ Widget::Widget(QWidget *parent)
 
     ui->watchView->header()->setStretchLastSection(true);
     ui->watchView->setModel(new StdItemModel({tr("Expression"), tr("Value"), tr("Type")}, this));
+}
+
+Widget::Widget(QWidget *parent)
+    : QWidget(parent)
+    , ui(new Ui::Widget)
+{
+    ui->setupUi(this);
+    configureEditor(ui->textEdit);
+    configureSplitters(ui);
 
     auto g = DebugManager::instance();
 
@@ -510,12 +518,11 @@ void Widget::debugBreakRemoved(const gdb::Breakpoint &bp) {
 }
 
 void Widget::debugVariableCreated(const gdb::Variable &var) {
-    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
-    watchModel->appendRow({
-                              new QStandardItem{var.name},
-                              new QStandardItem{var.value},
-                              new QStandardItem{var.type}
-                          });
+    static_cast<QStandardItemModel*>(ui->watchView->model())->appendRow({
+        new QStandardItem{var.name},
+        new QStandardItem{var.value},
+        new QStandardItem{var.type}
+    });
     ui->watchView->header()->resizeSections(QHeaderView::ResizeToContents);
 }
 
