@@ -98,7 +98,15 @@ DialogStartDebug::DialogStartDebug(QWidget *parent) :
         }
     });
     connect(ui->buttonChoseGdbExecutable, &QToolButton::clicked, [this]() {
-        auto name = QFileDialog::getOpenFileName(this, tr("Select file"), {}, tr("gdb executable (*gdb*);;All files (*)"));
+        auto name = QFileDialog::getOpenFileName(this, tr("Select file"), {},
+#ifdef Q_OS_WIN
+                                                 tr("gdb executable (gdb.exe *-gdb.exe *-gdb-*.exe);;"
+                                                    "All files (*)")
+#else
+                                                 tr("gdb executable (gdb *-gdb *-gdb-*);;"
+                                                    "All files (*)")
+#endif
+                                                 );
         if (!name.isEmpty()) {
             int idx = ui->editorGdbExecFile->findText(name);
             if (!idx) {

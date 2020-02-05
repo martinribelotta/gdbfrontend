@@ -398,9 +398,11 @@ void MainWidget::startDebuggin()
 {
     DialogStartDebug d{this};
     if (d.exec() == QDialog::Accepted) {
+        auto g = DebugManager::instance();
         QStringList argv;
         if (d.needWriteInitScript()) {
-            auto gdbinit = new QTemporaryFile{".gdbinit-XXXXXX", this};
+            auto gdbinit = new QTemporaryFile{QDir{QDir::tempPath()}.filePath(".gdbinit-XXXXXX"), this};
+            connect(g, &DebugManager::terminated, [gdbinit]() { gdbinit->remove(); });
             if (gdbinit->open()) {
                 gdbinit->write(d.initScript().toLocal8Bit());
                 gdbinit->close();
@@ -410,7 +412,6 @@ void MainWidget::startDebuggin()
             argv.append({ "-x", d.initScriptName() });
         }
         argv.append(d.executableFile());
-        auto g = DebugManager::instance();
         g->setGdbArgs(argv);
         g->setGdbCommand(d.gdbExecutable());
         g->execute();
