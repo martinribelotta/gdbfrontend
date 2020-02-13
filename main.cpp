@@ -5,23 +5,24 @@
 #include <QCommandLineParser>
 #include <QTimer>
 
-#define _tr(text) QApplication::translate(__func__, text)
-
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     QApplication::setApplicationName("gdbfront");
+    QApplication::setApplicationDisplayName(QApplication::tr("GDBFront"));
     QApplication::setApplicationVersion("0.1");
+    QApplication::setOrganizationName("ourEmbeddeds");
+    QApplication::setOrganizationDomain("www.ourembeddeds.com");
     QCommandLineParser parser;
     parser.setApplicationDescription("GDB Frontend");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("executable", _tr("Executable to debug"));
+    parser.addPositionalArgument("exec", QApplication::tr("Executable to debug"));
     parser.addOptions({
-        { "init", _tr("Init script file"), "init" },
-        { "gdb", _tr("GDB Executable name"), "gdb" },
-        { "start", _tr("Automatic start session debug") },
-        { "gdbcmd", _tr("GDB Command"), "gdbcmd" }
+        { "init", QApplication::tr("Init script file"), "init" },
+        { "gdb", QApplication::tr("GDB Executable name"), "gdb" },
+        { "start", QApplication::tr("Automatic start session debug") },
+        { "gdbcmd", QApplication::tr("GDB Command"), "gdbcmd" }
     });
     parser.process(a);
 

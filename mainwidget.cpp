@@ -37,26 +37,8 @@ const auto MARKER_LINE_BG = QColor("#eeee11");
 
 }
 
-}
-
 static const QRegularExpression UNWANTED_PATH{R"(/(usr|opt|lib|arm-none-eabi)/.*)"};
 
-template <typename Func1, typename Func2>
-static inline QMetaObject::Connection weakConnect(
-    typename QtPrivate::FunctionPointer<Func1>::Object *sender, Func1 signal,
-    typename QtPrivate::FunctionPointer<Func2>::Object *receiver, Func2 slot)
-{
-
-    QMetaObject::Connection conn_normal = QObject::connect(sender, signal, receiver, slot);
-
-    QMetaObject::Connection* conn_delete = new QMetaObject::Connection();
-
-    *conn_delete = QObject::connect(sender, signal, [conn_normal, conn_delete](){
-        QObject::disconnect(conn_normal);
-        QObject::disconnect(*conn_delete);
-        delete conn_delete;
-    });
-    return conn_normal;
 }
 
 static QString find_root(const QStringList& list)
@@ -109,19 +91,16 @@ public:
             view->hideColumn(i);
     }
 
-    virtual ~FileSystemModel() {
-        view->setModel(nullptr);
-    }
+    virtual ~FileSystemModel() { view->setModel(nullptr); }
 };
 
 class StdItemModel: public QStandardItemModel
 {
 public:
     StdItemModel(const QStringList& labels, QObject *parent = nullptr) :
-        QStandardItemModel(parent)
-    {
-        setHorizontalHeaderLabels(labels);
-    }
+        QStandardItemModel(parent) { setHorizontalHeaderLabels(labels); }
+
+    void removeAllRows() { removeRows(0, rowCount()); }
 };
 
 static QLabel *createMessageLabel(QWidget *w)
@@ -146,7 +125,7 @@ static void configureEditor(QsciScintilla *ed)
     ed->setMarginType(0, QsciScintilla::NumberMargin);
     ed->setMarginsForegroundColor(conf::editor::MARGIN_FG);
     ed->setMarginType(1, QsciScintilla::SymbolMargin);
-    ed->setMarginWidth(1, "00000");
+    ed->setMarginWidth(1, "00");
     ed->setMarginMarkerMask(1, 0x3);
     ed->setMarginSensitivity(1, true);
     ed->markerDefine(QsciScintilla::Circle, QsciScintilla::SC_MARK_CIRCLE);
@@ -157,7 +136,7 @@ static void configureEditor(QsciScintilla *ed)
     ed->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 }
 
-static void configureSplitters(Ui::MainWidget *ui, QWidget *w)
+static void configureSplitters(Ui::MainWidget *ui)
 {
     ui->splitterOuter->setStretchFactor(0, 0);
     ui->splitterOuter->setStretchFactor(1, 1);
@@ -173,19 +152,41 @@ static void configureSplitters(Ui::MainWidget *ui, QWidget *w)
 
     ui->splitterInner->setStretchFactor(0, 1);
     ui->splitterInner->setStretchFactor(1, 0);
+}
 
-#define _tr(text) QApplication::translate(__func__, text)
+static inline StdItemModel *stdModel(QAbstractItemView *v)
+{
+    return static_cast<StdItemModel*>(v->model());
+}
+
+static void createModels(Ui::MainWidget *ui)
+{
     ui->stackTraceView->verticalHeader()->hide();
     ui->stackTraceView->horizontalHeader()->setStretchLastSection(true);
-    ui->stackTraceView->setModel(new StdItemModel({_tr("Level"), _tr("Function"), _tr("File"), _tr("Line")}, w));
+    ui->stackTraceView->setModel(new StdItemModel{
+        {
+            MainWidget::tr("Level"),
+            MainWidget::tr("Function"),
+            MainWidget::tr("File"),
+            MainWidget::tr("Line")
+        }, ui->stackTraceView});
 
     ui->contextFrameView->verticalHeader()->hide();
     ui->contextFrameView->horizontalHeader()->setStretchLastSection(true);
-    ui->contextFrameView->setModel(new StdItemModel({_tr("name"), _tr("value"), _tr("type")}, w));
+    ui->contextFrameView->setModel(new StdItemModel{
+        {
+            MainWidget::tr("name"),
+            MainWidget::tr("value"),
+            MainWidget::tr("type")
+        }, ui->contextFrameView});
 
     ui->watchView->header()->setStretchLastSection(true);
-    ui->watchView->setModel(new StdItemModel({_tr("Expression"), _tr("Value"), _tr("Type")}, w));
-#undef _tr
+    ui->watchView->setModel(new StdItemModel{
+        {
+            MainWidget::tr("Expression"),
+            MainWidget::tr("Value"),
+            MainWidget::tr("Type")
+        }, ui->watchView});
 }
 
 MainWidget::MainWidget(QWidget *parent)
@@ -194,7 +195,8 @@ MainWidget::MainWidget(QWidget *parent)
 {
     ui->setupUi(this);
     configureEditor(ui->textEdit);
-    configureSplitters(ui, this);
+    configureSplitters(ui);
+    createModels(ui);
 
     auto g = DebugManager::instance();
 
@@ -248,7 +250,7 @@ void MainWidget::closeEvent(QCloseEvent *e)
     if (g->isGdbExecuting()) {
         auto r = QMessageBox::question(this, tr("Exit?"), tr("Programm is running. Exit anywere?"));
         if (r == QMessageBox::Yes) {
-            weakConnect(g, &DebugManager::gdbProcessTerminated, this, &MainWidget::close);
+            connect(g, &DebugManager::gdbProcessTerminated, this, &MainWidget::close);
             g->quit();
         }
         e->ignore();
@@ -280,11 +282,12 @@ void MainWidget::setItemsEnable(bool en)
     if (!en) {
         ui->threadSelector->clear();
         ui->textEdit->clear();
-        static_cast<QStandardItemModel*>(ui->contextFrameView->model())->clear();
-        static_cast<QStandardItemModel*>(ui->contextFrameView->model())->clear();
-        static_cast<QStandardItemModel*>(ui->stackTraceView->model())->clear();
-        static_cast<QStandardItemModel*>(ui->watchView->model())->clear();
-        if (ui->treeView->model()) ui->treeView->model()->deleteLater();
+        stdModel(ui->contextFrameView)->removeAllRows();
+        stdModel(ui->contextFrameView)->removeAllRows();
+        stdModel(ui->stackTraceView)->removeAllRows();
+        stdModel(ui->watchView)->removeAllRows();
+        if (ui->treeView->model())
+            ui->treeView->model()->deleteLater();
         ui->gdbOut->clear();
     }
 }
@@ -297,8 +300,8 @@ void MainWidget::updateSourceFiles()
             QSet<QString> files;
             for (const auto& e: fileListData) {
                 auto v = e.toMap();
-                auto info = QFileInfo{v.value("fullname").toString()};
-                if (info.exists() && !UNWANTED_PATH.match(info.absoluteFilePath()).hasMatch()) {
+                QFileInfo info{v.value("fullname").toString()};
+                if (info.exists() && !conf::UNWANTED_PATH.match(info.absoluteFilePath()).hasMatch()) {
                     files.insert(info.absoluteFilePath());
                 }
             }
@@ -309,6 +312,8 @@ void MainWidget::updateSourceFiles()
     });
 }
 
+static int digitsIn(int v) { return 1 + int(::floor(::log10(v))); }
+
 bool MainWidget::openFile(const QString &fullpath)
 {
     QFile f{fullpath};
@@ -317,8 +322,8 @@ bool MainWidget::openFile(const QString &fullpath)
         return false;
     }
     ui->textEdit->read(&f);
-    int chars = ::log10(ui->textEdit->lines()) + 1;
-    int w = QFontMetrics(ui->textEdit->font()).width("00") * chars;
+    int n = digitsIn(ui->textEdit->lines()) + 1;
+    int w = QFontMetrics(ui->textEdit->font()).width("0") * n;
     ui->textEdit->setMarginWidth(0, w);
     ui->textEdit->setWindowFilePath(fullpath);
     ui->textEdit->markerDeleteAll(QsciScintilla::SC_MARK_BACKGROUND);
@@ -350,7 +355,7 @@ void MainWidget::buttonAddWatchClicked() {
 
 void MainWidget::buttonDelWatchClicked()
 {
-    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    auto watchModel = stdModel(ui->watchView);
     for (const auto i: ui->watchView->selectionModel()->selectedRows(0)) {
         auto item = watchModel->itemFromIndex(i);
         if (item)
@@ -359,7 +364,7 @@ void MainWidget::buttonDelWatchClicked()
 }
 
 void MainWidget::buttonClrWatchClicked() {
-    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    auto watchModel = stdModel(ui->watchView);
     auto g = DebugManager::instance();
     for (int row=0; row<watchModel->rowCount(); row++) {
         auto item = watchModel->item(row, 0);
@@ -383,7 +388,7 @@ void MainWidget::fileViewActivate(const QModelIndex &idx) {
 }
 
 void MainWidget::stackTraceClicked(const QModelIndex &idx) {
-    auto m = qobject_cast<QStandardItemModel*>(ui->stackTraceView->model());
+    auto m = stdModel(ui->stackTraceView);
     if (m) {
         auto item = m->item(idx.row(), 0);
         if (item) {
@@ -440,8 +445,8 @@ void MainWidget::toggleRunStop()
 }
 
 void MainWidget::debugUpdateLocalVariables(const QList<gdb::Variable> &locals) {
-    auto model = static_cast<QStandardItemModel*>(ui->contextFrameView->model());
-    model->clear();
+    auto model = stdModel(ui->contextFrameView);
+    model->removeAllRows();
     for (const auto& e: locals) {
         model->appendRow({
                              new QStandardItem{e.name},
@@ -480,15 +485,15 @@ void MainWidget::debugUpdateThreads(int curr, const QList<gdb::Thread> &threads)
 
 void MainWidget::debugUpdateStackFrame(const QList<gdb::Frame> &stackTrace)
 {
-    auto model = static_cast<QStandardItemModel*>(ui->stackTraceView->model());
-    model->clear();
+    auto model = stdModel(ui->stackTraceView);
+    model->removeAllRows();
     for (const auto& frame: stackTrace) {
         QStandardItem *first;
         model->appendRow({
-            first = new QStandardItem{QString("%1").arg(frame.level)},
+            first = new QStandardItem{QString{"%1"}.arg(frame.level)},
             new QStandardItem{frame.func.isEmpty()? QString{"0x%1"}.arg(frame.addr, '0', 16) : frame.func},
             new QStandardItem{frame.file},
-            new QStandardItem{QString("%1").arg(frame.line)},
+            new QStandardItem{QString{"%1"}.arg(frame.line)},
             });
         first->setData(QVariant::fromValue(frame));
     }
@@ -524,7 +529,7 @@ void MainWidget::debugBreakRemoved(const gdb::Breakpoint &bp) {
 }
 
 void MainWidget::debugVariableCreated(const gdb::Variable &var) {
-    static_cast<QStandardItemModel*>(ui->watchView->model())->appendRow({
+    stdModel(ui->watchView)->appendRow({
         new QStandardItem{var.name},
         new QStandardItem{var.value},
         new QStandardItem{var.type}
@@ -533,7 +538,7 @@ void MainWidget::debugVariableCreated(const gdb::Variable &var) {
 }
 
 void MainWidget::debugVariableRemoved(const gdb::Variable &var) {
-    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    auto watchModel = stdModel(ui->watchView);
     bool removeMore = true;
     while (removeMore) {
         auto items = watchModel->findItems(var.name);
@@ -545,7 +550,7 @@ void MainWidget::debugVariableRemoved(const gdb::Variable &var) {
 }
 
 void MainWidget::debugVariablesUpdate(const QStringList &changes) {
-    auto watchModel = static_cast<QStandardItemModel*>(ui->watchView->model());
+    auto watchModel = stdModel(ui->watchView);
     QList<int> rowsChanged;
     for (const auto& e: changes)
         for (const auto& k: watchModel->findItems(e))
