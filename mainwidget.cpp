@@ -246,8 +246,11 @@ void MainWidget::closeEvent(QCloseEvent *e)
 {
     auto g = DebugManager::instance();
     if (g->isGdbExecuting()) {
-        weakConnect(g, &DebugManager::gdbProcessTerminated, this, &MainWidget::close);
-        g->quit();
+        auto r = QMessageBox::question(this, tr("Exit?"), tr("Programm is running. Exit anywere?"));
+        if (r == QMessageBox::Yes) {
+            weakConnect(g, &DebugManager::gdbProcessTerminated, this, &MainWidget::close);
+            g->quit();
+        }
         e->ignore();
     } else
         e->accept();
