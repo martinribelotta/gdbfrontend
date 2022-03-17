@@ -61,7 +61,7 @@ DialogStartDebug::DialogStartDebug(QWidget *parent) :
                 if (processObject(ui->comboGdbInitTemplates, doc.object()))
                     defaultIdx = ui->comboGdbInitTemplates->count() - 1;
             } else if (doc.isArray()) {
-                for (const auto& g: doc.array()) {
+                for (const QJsonValueRef g: doc.array()) {
                     if (processObject(ui->comboGdbInitTemplates, g.toObject()))
                         defaultIdx = ui->comboGdbInitTemplates->count() - 1;
                 }
